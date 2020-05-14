@@ -10,14 +10,19 @@ import '../interfaces/IUniswapV2Router01.sol';
 import '../interfaces/IERC20.sol';
 import '../interfaces/IWETH.sol';
 
+
+// CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
+// Right now the prize pool is long DAI,ETH,USDT,USDC
 contract CandyShopArber is IUniswapV2Callee {
     IUniswapV1Factory immutable factoryV1;
     address immutable factory;
+    IUniswapV2Router01 immutable router01;
     IWETH immutable WETH;
 
     constructor(address _factory, address _factoryV1, address router) public {
         factoryV1 = IUniswapV1Factory(_factoryV1);
         factory = _factory;
+        router01 = IUniswapV2Router01(router); 
         WETH = IWETH(IUniswapV2Router01(router).WETH());
     }
 
@@ -64,5 +69,24 @@ contract CandyShopArber is IUniswapV2Callee {
             assert(token.transfer(msg.sender, amountRequired)); // return tokens to V2 pair
             assert(token.transfer(sender, amountReceived - amountRequired)); // keep the rest! (tokens)
         }
+    }
+
+
+    function EthToTokenSwapInputV1(address token,uint256 min_tokens ,uint256 deadline) external {
+        // route original trade to uniswapV1
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(address(token))); // get V1 exchange
+        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: amountETH}(min_tokens,deadline);
+
+        // check if arb opportunity is there wrt UniswapV2 and if the profitable token is the one which we accept
+        
+        // ASSUME: Let's assume we want to convert hardcoded amount
+        uint256 arbitrageAmount = 1;
+        address pair = UniswapV2Library.pairFor(factory, address(WETH), token);
+
+    
+        // flash loan assets
+        pair.swap(0,arbitrageAmount,this,abi.Encode(arbitrageAmount));
+
+        // share profits with msg.sender and prize pool
     }
 }
