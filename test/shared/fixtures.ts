@@ -6,13 +6,12 @@ import { expandTo18Decimals } from './utilities'
 
 import UniswapV2Factory from '@uniswap/v2-core/build/UniswapV2Factory.json'
 import IUniswapV2Pair from '@uniswap/v2-core/build/IUniswapV2Pair.json'
-
+import UniswapV2Router01 from '@uniswap/v2-periphery/build/UniswapV2Router01.json';
 import ERC20 from '../../build/ERC20.json'
 import WETH9 from '../../build/WETH9.json'
 import UniswapV1Exchange from '../../build/UniswapV1Exchange.json'
 import UniswapV1Factory from '../../build/UniswapV1Factory.json'
-import UniswapV2Router01 from '../../build/UniswapV2Router01.json'
-import UniswapV2Migrator from '../../build/UniswapV2Migrator.json'
+import UniswapV2Migrator from'@uniswap/v2-periphery/build/UniswapV2Migrator.json'
 
 const overrides = {
   gasLimit: 9999999

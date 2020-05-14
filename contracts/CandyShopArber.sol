@@ -10,7 +10,7 @@ import '../interfaces/IUniswapV2Router01.sol';
 import '../interfaces/IERC20.sol';
 import '../interfaces/IWETH.sol';
 
-contract ExampleFlashSwap is IUniswapV2Callee {
+contract CandyShopArber is IUniswapV2Callee {
     IUniswapV1Factory immutable factoryV1;
     address immutable factory;
     IWETH immutable WETH;

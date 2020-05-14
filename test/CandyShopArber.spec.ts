@@ -7,7 +7,7 @@ import { solidity, MockProvider, createFixtureLoader, deployContract } from 'eth
 import { expandTo18Decimals } from './shared/utilities'
 import { v2Fixture } from './shared/fixtures'
 
-import ExampleFlashSwap from '../build/ExampleFlashSwap.json'
+import CandyShopArber from '../build/CandyShopArber.json'
 
 chai.use(solidity)
 
@@ -16,7 +16,7 @@ const overrides = {
   gasPrice: 0
 }
 
-describe('ExampleFlashSwap', () => {
+describe('CandyShopArber', () => {
   const provider = new MockProvider({
     hardfork: 'istanbul',
     mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
@@ -39,7 +39,7 @@ describe('ExampleFlashSwap', () => {
     WETHPair = fixture.WETHPair
     flashSwapExample = await deployContract(
       wallet,
-      ExampleFlashSwap,
+      CandyShopArber,
       [fixture.factoryV2.address, fixture.factoryV1.address, fixture.router.address],
       overrides
     )
