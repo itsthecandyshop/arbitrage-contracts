@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Uniswap/uniswap-v2-periphery"
+    "url": "https://github.com/itsthecandyshop/arbitrage-contracts"
   },
   "files": [
     "build",
@@ -28,6 +28,7 @@
     "mocha": "^6.2.2",
     "ncp": "^2.0.0",
     "prettier": "^1.19.1",
+    "prettier-plugin-solidity": "^1.0.0-alpha.51",
     "rimraf": "^3.0.0",
     "solc": "0.6.6",
     "ts-node": "^8.5.4",
@@ -36,6 +37,7 @@
   "scripts": {
     "lint": "yarn prettier ./test/*.ts --check",
     "lint:fix": "yarn prettier ./test/*.ts --write",
+    "prettier": "prettier --write **/*.sol",
     "clean": "rimraf ./build/",
     "copy-v1-artifacts": "ncp ./buildV1 ./build",
     "precompile": "yarn clean",
