@@ -3,12 +3,12 @@ pragma solidity =0.6.6;
 
 import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Callee.sol';
 
-import '../libraries/UniswapV2Library.sol';
-import '../interfaces/V1/IUniswapV1Factory.sol';
-import '../interfaces/V1/IUniswapV1Exchange.sol';
-import '../interfaces/IUniswapV2Router01.sol';
-import '../interfaces/IERC20.sol';
-import '../interfaces/IWETH.sol';
+import './libraries/UniswapV2Library.sol';
+import './interfaces/V1/IUniswapV1Factory.sol';
+import './interfaces/V1/IUniswapV1Exchange.sol';
+import './interfaces/IUniswapV2Router01.sol';
+import './interfaces/IERC20.sol';
+import './interfaces/IWETH.sol';
 
 
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
@@ -73,10 +73,8 @@ contract CandyShopArber is IUniswapV2Callee {
             uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountETH, path)[0];
             assert(amountReceived > amountRequired); // fail if we didn't get enough tokens back to repay our flash loan
             assert(token.transfer(msg.sender, amountRequired)); // return tokens to V2 pair
-
             // TODO: slit profits with sender and lottery, currently giving all profits to lottery
-            assert(token.transfer(address(this), amountReceived - amountRequired)); // keep the rest! (tokens)
-            
+            // assert(token.transfer(address(this), amountReceived - amountRequired)); // keep the rest! (tokens)
             // TODO swap these tokens to ETH
         }
     }
@@ -97,7 +95,7 @@ contract CandyShopArber is IUniswapV2Callee {
         require(token.transfer(pairAddr,numTokensObtained),"token transfer was not a success");
 
         // flash loan assets
-        pair.swap(arbAmount,0,msg.sender, '0x');
+        pair.swap(0,arbAmount,address(this),new bytes(0x0000000000000000000000000000000000000000000000000000000000000001));
     }
 
     function EthToTokenSwapInputV1Vanilla(address tokenAddr, uint256 min_tokens, uint deadline) public payable {
