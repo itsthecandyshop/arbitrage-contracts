@@ -71,44 +71,13 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
     
-    function EthToTokenSwapInputV1(address tokenAddr,uint256 min_tokens ,uint256 deadline) external payable {
-        // exchange ETH to tokens on uniswapV1
-        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(tokenAddr)); // get V1 exchange
-        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(min_tokens, uint(-1)); 
-
-        // calculate arb amount
-        uint256 arbAmount = 200000000000000000000;
-        IERC20 token = IERC20(tokenAddr);
-assert(token.transfer(msg.sender, numTokensObtained));
-        // trade num tokens we got from earlier trade back to ETH on uniswapV2
-        // address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), tokenAddr);
-        // IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
-
-        // require(token.transfer(pairAddr,numTokensObtained),"token transfer was not a success");
-
-        // flash loan assets
-        // pair.swap(arbAmount,0,msg.sender, '0x');
+    function FlashSwapV2(uint256 amount0,uint256 amount1,address token, uint256 slippageParam,uint256 minTokens) public payable{
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token)); 
+        IERC20 WETHPartner = IERC20(token);
+        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
+        address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), token);
+        IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
+        pair.swap(amount0,amount1,address(this),abi.encode(slippageParam));
+        assert(WETHPartner.transfer(msg.sender, numTokensObtained)); 
     }
-
-    // function EthToTokenSwapInputV1Vanilla(address tokenAddr, uint256 min_tokens, uint deadline) public payable {
-    //     IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(tokenAddr)); // get V1 exchange
-    //     IERC20 token = IERC20(tokenAddr);
-    //     uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(min_tokens, uint(-1));
-    //     assert(token.transfer(msg.sender, numTokensObtained)); // keep the rest! (tokens)
-    // }
-
-
-    // function ExactETHForTokensV2(uint amountOutMin, address[] calldata path, address to, uint deadline)
-    // external
-    // payable
-    // returns (uint[] memory amounts){
-    //     return router01.swapExactETHForTokens{value: msg.value}(amountOutMin, path, to, deadline);
-    // }
-
-
-    // function EthToTokenSwapWithBaseSwap(address token,uint amount0Out, uint amount1Out, address to, bytes calldata data) external{
-    //     address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), token);
-    //     IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
-    //     return pair.swap(amount0Out, amount1Out,to,data);
-    // }
 }

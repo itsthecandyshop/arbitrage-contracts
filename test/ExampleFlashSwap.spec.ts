@@ -81,6 +81,13 @@ describe('ExampleFlashSwapArber', () => {
       flashSwapExample.address,
       defaultAbiCoder.encode(['uint'], [bigNumberify(1)])
     )
+    console.log(
+      'input data for Token play',
+      amount0.toString(),
+      amount1,
+      flashSwapExample.address,
+      defaultAbiCoder.encode(['uint'], [bigNumberify(1)])
+    )
     await WETHPair.swap(
       amount0,
       amount1,
@@ -134,7 +141,13 @@ describe('ExampleFlashSwapArber', () => {
     const WETHPairToken0 = await WETHPair.token0()
     const amount0 = WETHPairToken0 === WETHPartner.address ? arbitrageAmount : bigNumberify(0)
     const amount1 = WETHPairToken0 === WETHPartner.address ? bigNumberify(0) : arbitrageAmount
-
+    console.log(
+      'input data for ETH play',
+      amount0.toString(),
+      amount1.toString(),
+      flashSwapExample.address,
+      defaultAbiCoder.encode(['uint'], [bigNumberify(1)])
+    )
     await WETHPair.swap(
       amount0,
       amount1,
