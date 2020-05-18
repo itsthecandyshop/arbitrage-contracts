@@ -71,7 +71,7 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
     
-    function FlashSwapV2(uint256 amount0,uint256 amount1,address token, uint256 slippageParam,uint256 minTokens) public payable{
+    function EthToTokenSwap(address token,uint256 amount0,uint256 amount1, uint256 deadline,uint256 minTokens, uint256 slippageParam) public payable{
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token)); 
         IERC20 WETHPartner = IERC20(token);
         uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
@@ -79,5 +79,16 @@ contract CandyShopArber is IUniswapV2Callee {
         IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
         pair.swap(amount0,amount1,address(this),abi.encode(slippageParam));
         assert(WETHPartner.transfer(msg.sender, numTokensObtained)); 
+    }
+
+    function TokenToEthSwap(address token, uint256 tokensSold, uint256 minEth, uint256 deadline,uint256 slippageParam,uint256 amount0,uint256 amount1) public {
+        // trade token for ETH on V1
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token)); 
+        IERC20 WETHPartner = IERC20(token);
+        uint256 EthObtained = exchangeV1.tokenToEthSwapInput(tokensSold, minEth, uint(-1));
+        address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), token);
+        IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
+        pair.swap(amount0,amount1,address(this),abi.encode(slippageParam)); 
+        msg.sender.send(EthObtained);
     }
 }
