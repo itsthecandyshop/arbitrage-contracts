@@ -25,6 +25,7 @@ contract CandyShopArber is IUniswapV2Callee {
     IUniswapV2Router01 immutable router01;
     IWETH immutable WETH;
 
+    uint256 ONE = 1000000000000000000; 
     constructor(address _factory, address _factoryV1, address router) public {
         factoryV1 = IUniswapV1Factory(_factoryV1);
         factory = _factory;
@@ -57,9 +58,10 @@ contract CandyShopArber is IUniswapV2Callee {
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(address(token))); // get V1 exchange
 
         if (amountToken > 0) {
+            // we have tokens on loan which we want to swap for ETH on V1 and return the ETH as WETH back to V2
             (uint minETH) = abi.decode(data, (uint)); // slippage parameter for V1, passed in by caller
             token.approve(address(exchangeV1), amountToken);
-            uint amountReceived = exchangeV1.tokenToEthSwapInput(amountToken, minETH, uint(-1));
+            uint amountReceived = exchangeV1.tokenToEthSwapInput(amountToken, minETH, uint(-1));           
             uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountToken, path)[0];
             require(amountReceived > amountRequired,"CS: Not enough ETH to payback loan"); // fail if we didn't get enough ETH back to repay our flash loan
             WETH.deposit{value: amountRequired}();
@@ -77,14 +79,27 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
     
-    function EthToTokenSwap(address token,uint256 amount0,uint256 amount1, uint256 deadline,uint256 minTokens, uint256 slippageParam) public payable{
-        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token)); 
-        IERC20 WETHPartner = IERC20(token);
+    function EthToTokenSwap(address token, uint256 deadline,uint256 minTokens, uint256 slippageParam,bool WithArb) public payable returns(uint256,uint256){
+        // get V1 contract exchange
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
         uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
-        address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), token);
-        IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
-        pair.swap(amount0,amount1,address(this),abi.encode(slippageParam));
-        require(WETHPartner.transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper"); 
+        uint256 profit;
+        uint256 EthBeforeArb;
+        if (WithArb){
+            {
+            IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+            // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
+            uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(exchangeV1, token,deadline,false);
+            EthBeforeArb = address(this).balance;
+            pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded),address(this),abi.encode(slippageParam));
+            }
+            require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
+            
+            profit = address(this).balance - EthBeforeArb;
+            numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: profit}(1, uint(-1));
+            require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper"); 
+        }
+        return (numTokensObtained,profit);
     }
 
     function TokenToEthSwap(address token, uint256 tokensSold, uint256 minEth, uint256 deadline,uint256 slippageParam,uint256 amount0,uint256 amount1) public {
@@ -98,7 +113,29 @@ contract CandyShopArber is IUniswapV2Callee {
         msg.sender.transfer(EthObtained);
     }
 
-    // computes the direction and magnitude of the profit-maximizing trade
+
+     // calculateAmountForArbitrage calculates how much to arbitrage
+    function calculateAmountForArbitrage(IUniswapV1Exchange exchangeV1, address token,uint256 deadline, bool IsDirectionETHToToken) internal returns(uint256) {
+       // get uniswapV2 reserves
+       (uint256 reserveETHV2, uint256 reserveTokenV2) = UniswapV2Library.getReserves(factory, address(WETH), token);
+        
+       // calulate price on V2
+       uint256 numOfTokensPerEth = UniswapV2Library.quote(ONE, reserveETHV2,reserveTokenV2);
+
+       uint256 reserveETHV1 = address(exchangeV1).balance;
+       uint256 reserveTokenV1 = IERC20(address(token)).balanceOf(address(exchangeV1)); 
+       (bool EthToToken, uint256 amountIn) = computeProfitMaximizingTrade(
+                ONE, numOfTokensPerEth,
+                reserveETHV1, reserveTokenV1
+        );
+
+        // Since we are converting tokens we borrowed from V2 to ETH the direction should be TokenToEth
+        require(EthToToken == IsDirectionETHToToken,"Direction invalid");
+        
+        return amountIn;
+    }
+
+    // computes the direction and magnitude of the profit-maximizing tradea
     function computeProfitMaximizingTrade(
         uint256 truePriceTokenA,
         uint256 truePriceTokenB,
@@ -118,59 +155,4 @@ contract CandyShopArber is IUniswapV2Callee {
         // compute the amount that must be sent to move the price to the profit-maximizing price
         amountIn = leftSide.sub(rightSide);
     }
-
-    // swaps an amount of either token such that the trade is profit-maximizing, given an external true price
-    // true price is expressed in the ratio of token A to token B
-    // caller must approve this contract to spend whichever token is intended to be swapped
-    function swapToPrice(
-        address tokenA,
-        address tokenB,
-        uint256 truePriceTokenA,
-        uint256 truePriceTokenB,
-        uint256 maxSpendTokenA,
-        uint256 maxSpendTokenB,
-        address to,
-        uint256 deadline
-    ) public {
-        // true price is expressed as a ratio, so both values must be non-zero
-        require(truePriceTokenA != 0 && truePriceTokenB != 0, "CS: ZERO_PRICE");
-        // caller can specify 0 for either if they wish to swap in only one direction, but not both
-        require(maxSpendTokenA != 0 || maxSpendTokenB != 0, "CS: ZERO_SPEND");
-
-        bool aToB;
-        uint256 amountIn;
-        {
-            (uint256 reserveA, uint256 reserveB) = UniswapV2Library.getReserves(factory, tokenA, tokenB);
-            (aToB, amountIn) = computeProfitMaximizingTrade(
-                truePriceTokenA, truePriceTokenB,
-                reserveA, reserveB
-            );
-        }
-
-        // spend up to the allowance of the token in
-        uint256 maxSpend = aToB ? maxSpendTokenA : maxSpendTokenB;
-        if (amountIn > maxSpend) {
-            amountIn = maxSpend;
-        }
-
-        address tokenIn = aToB ? tokenA : tokenB;
-        address tokenOut = aToB ? tokenB : tokenA;
-        TransferHelper.safeTransferFrom(tokenIn, msg.sender, address(this), amountIn);
-        TransferHelper.safeApprove(tokenIn, address(router01), amountIn);
-
-        address[] memory path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = tokenOut;
-
-        router01.swapExactTokensForTokens(
-            amountIn,
-            0, // amountOutMin: we can skip computing this number because the math is tested
-            path,
-            to,
-            deadline
-        );
-    }
-
-
-
 }
