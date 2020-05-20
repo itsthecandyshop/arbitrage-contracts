@@ -1,13 +1,14 @@
 import chai, {expect} from 'chai'
-import {ethers} from '@nomiclabs/buidler'
 import {MaxUint256} from 'ethers/constants'
 import {BigNumber, bigNumberify, defaultAbiCoder, formatEther} from 'ethers/utils'
 import {solidity, MockProvider, createFixtureLoader, deployContract} from 'ethereum-waffle'
 import {expandTo18Decimals} from './shared/utilities'
 import {v2Fixture} from './shared/fixtures'
 import CandyShopArber from '../build/CandyShopArber.json'
-
 chai.use(solidity)
+import {Contract} from 'ethers'
+import {getWallets} from 'ethereum-waffle'
+import {waffle} from '@nomiclabs/buidler'
 
 const overrides = {
   gasLimit: 9999999,
@@ -15,22 +16,23 @@ const overrides = {
 }
 
 describe('CandyShopArber', () => {
-  // const provider = new MockProvider({
-  //   hardfork: 'istanbul',
-  //   mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
-  //   gasLimit: 9999999
-  // })
-  const provider = ethers.provider
-
-  const [wallet] = provider.getWallets()
+  const provider = new MockProvider({
+    hardfork: 'istanbul',
+    mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
+    gasLimit: 9999999
+  })
+  // const provider = Waffle.provider
+  console.log(waffle.provider)
+  const [wallet] = getWallets(provider)
   const loadFixture = createFixtureLoader(provider, [wallet])
 
-  let WETH: ethers.Contract
-  let WETHPartner: ethers.Contract
-  let WETHExchangeV1: ethers.Contract
-  let WETHPair: ethers.Contract
-  let candyShopArber: ethers.Contract
-  let V2Router: ethers.Contract
+  let WETH: Contract
+  let WETHPartner: Contract
+  let WETHExchangeV1: Contract
+  let WETHPair: Contract
+  let candyShopArber: Contract
+  let V2Router: Contract
+
   beforeEach(async function() {
     const fixture = await loadFixture(v2Fixture)
 
