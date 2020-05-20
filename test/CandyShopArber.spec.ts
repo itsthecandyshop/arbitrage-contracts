@@ -57,7 +57,7 @@ describe('CandyShopArber', () => {
     })
 
     // add liquidity to V2 at a rate of 1 ETH / 200 X
-    const WETHPartnerAmountV2 = expandTo18Decimals(1300)
+    const WETHPartnerAmountV2 = expandTo18Decimals(1000)
     const ETHAmountV2 = expandTo18Decimals(10)
     await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
     await WETH.deposit({ value: ETHAmountV2 })
@@ -81,9 +81,9 @@ describe('CandyShopArber', () => {
     const WETHPairToken0 = await WETHPair.token0()
     const amount0 = WETHPairToken0 === WETHPartner.address ? arbitrageAmount : bigNumberify(0)
     const amount1 = WETHPairToken0 === WETHPartner.address ? bigNumberify(0) : arbitrageAmount
-    await candyShopArber.EthToTokenSwap(WETHPartner.address, amount0, amount1, MaxUint256, 1, 1, {
+    await candyShopArber.EthToTokenSwap(WETHPartner.address, MaxUint256, 1, 1, {
       ...overrides,
-      value: expandTo18Decimals(1),
+      value: expandTo18Decimals(2),
     })
 
     const balanceAfter = await provider.getBalance(wallet.address)
@@ -100,16 +100,6 @@ describe('CandyShopArber', () => {
     var balanceOfCandyShop = await provider.getBalance(candyShopArber.address)
     console.log('candy shop balance', balanceOfCandyShop.toString())
     console.log('prices', priceV1.toString(), priceV2.toString())
-    // expect(formatEther(profit)).to.eq('0.548043441089763649') // our profit is ~.5 ETH
-    // expect(priceV1.toString()).to.eq('143') // we pushed the v1 price up to ~143
-    // expect(priceV2.toString()).to.eq('161') // we pushed the v2 price down to ~161
-    // await WETHPair.swap(
-    //   amount0,
-    //   amount1,
-    //   candyShopArber.address,
-    //   defaultAbiCoder.encode(['uint'], [bigNumberify(1)]),
-    //   overrides
-    // )
   })
 })
 
