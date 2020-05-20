@@ -10,6 +10,9 @@ const config: BuidlerConfig = {
       runs: 999999
     }
   },
+vyper: {
+    version: "0.1.0b9"
+  },
   paths: {
     artifacts: './build'
   }

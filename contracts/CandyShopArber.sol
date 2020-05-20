@@ -28,6 +28,7 @@ contract CandyShopArber is IUniswapV2Callee {
 
     uint256 ONE = 1000000000000000000; 
     constructor(address _factory, address _factoryV1, address router) public {
+        console.log("writing contracts yolo");
         factoryV1 = IUniswapV1Factory(_factoryV1);
         factory = _factory;
         router01 = IUniswapV2Router01(router); 
@@ -80,17 +81,25 @@ contract CandyShopArber is IUniswapV2Callee {
     }
     
     function EthToTokenSwap(address token, uint256 deadline,uint256 minTokens, uint256 slippageParam) public payable{
+        console.log("here");
         // get V1 contract exchange
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token)); 
         IERC20 WETHPartner = IERC20(token);
-        
+
+        console.log("weth partner address",address(WETHPartner));
         uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
+        console.log("num of tokens obtained",numTokensObtained);
         address pairAddr = UniswapV2Library.pairFor(factory, address(WETH), token);
         IUniswapV2Pair pair = IUniswapV2Pair(pairAddr);
+        console.log("pair found",address(pair));
 
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
         uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(exchangeV1, token,deadline,false);
+
+        console.log("optimum number of tokens that need to be traded",numOfTokensToBeTraded);
+        
         address token0 =  pair.token0();
+
         uint256 amount0 = token0 == address(token) ? numOfTokensToBeTraded : 0; 
         uint256 amount1 = token0 == address(token) ? 0 : numOfTokensToBeTraded; 
 
