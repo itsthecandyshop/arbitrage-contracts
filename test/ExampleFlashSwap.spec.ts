@@ -1,27 +1,22 @@
-import chai, { expect } from 'chai'
-import { Contract } from 'ethers'
-import { MaxUint256 } from 'ethers/constants'
-import { BigNumber, bigNumberify, defaultAbiCoder, formatEther } from 'ethers/utils'
-import { solidity, MockProvider, createFixtureLoader, deployContract } from 'ethereum-waffle'
-
-import { expandTo18Decimals } from './shared/utilities'
-import { v2Fixture } from './shared/fixtures'
-
+import chai, {expect} from 'chai'
+import {Contract} from 'ethers'
+import {MaxUint256} from 'ethers/constants'
+import {BigNumber, bigNumberify, defaultAbiCoder, formatEther} from 'ethers/utils'
+import {solidity, MockProvider, createFixtureLoader, deployContract} from 'ethereum-waffle'
+import {expandTo18Decimals} from './shared/utilities'
+import {v2Fixture} from './shared/fixtures'
+import {waffle} from '@nomiclabs/buidler'
 import CandyShopArber from '../build/CandyShopArber.json'
 
 chai.use(solidity)
 
 const overrides = {
-  gasLimit: 9999999,
-  gasPrice: 0,
+  // gasLimit: 9500000,
+  // gasPrice: 0
 }
 
 describe('ExampleFlashSwapArber', () => {
-  const provider = new MockProvider({
-    hardfork: 'istanbul',
-    mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
-    gasLimit: 9999999,
-  })
+  const provider = waffle.provider
   const [wallet] = provider.getWallets()
   const loadFixture = createFixtureLoader(provider, [wallet])
 
@@ -30,7 +25,7 @@ describe('ExampleFlashSwapArber', () => {
   let WETHExchangeV1: Contract
   let WETHPair: Contract
   let flashSwapExample: Contract
-  beforeEach(async function () {
+  beforeEach(async function() {
     const fixture = await loadFixture(v2Fixture)
 
     WETH = fixture.WETH
@@ -52,14 +47,14 @@ describe('ExampleFlashSwapArber', () => {
     await WETHPartner.approve(WETHExchangeV1.address, WETHPartnerAmountV1)
     await WETHExchangeV1.addLiquidity(bigNumberify(1), WETHPartnerAmountV1, MaxUint256, {
       ...overrides,
-      value: ETHAmountV1,
+      value: ETHAmountV1
     })
 
     // add liquidity to V2 at a rate of 1 ETH / 100 X
     const WETHPartnerAmountV2 = expandTo18Decimals(1000)
     const ETHAmountV2 = expandTo18Decimals(10)
     await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
-    await WETH.deposit({ value: ETHAmountV2 })
+    await WETH.deposit({value: ETHAmountV2})
     await WETH.transfer(WETHPair.address, ETHAmountV2)
     await WETHPair.mint(wallet.address, overrides)
 
@@ -93,7 +88,7 @@ describe('ExampleFlashSwapArber', () => {
     const profit = balanceAfter.sub(balanceBefore).div(expandTo18Decimals(1))
     const reservesV1 = [
       await WETHPartner.balanceOf(WETHExchangeV1.address),
-      await provider.getBalance(WETHExchangeV1.address),
+      await provider.getBalance(WETHExchangeV1.address)
     ]
     const priceV1 = reservesV1[0].div(reservesV1[1])
     const reservesV2 = (await WETHPair.getReserves()).slice(0, 2)
@@ -112,14 +107,14 @@ describe('ExampleFlashSwapArber', () => {
     await WETHPartner.approve(WETHExchangeV1.address, WETHPartnerAmountV1)
     await WETHExchangeV1.addLiquidity(bigNumberify(1), WETHPartnerAmountV1, MaxUint256, {
       ...overrides,
-      value: ETHAmountV1,
+      value: ETHAmountV1
     })
 
     // add liquidity to V2 at a rate of 1 ETH / 200 X
     const WETHPartnerAmountV2 = expandTo18Decimals(2000)
     const ETHAmountV2 = expandTo18Decimals(10)
     await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
-    await WETH.deposit({ value: ETHAmountV2 })
+    await WETH.deposit({value: ETHAmountV2})
     await WETH.transfer(WETHPair.address, ETHAmountV2)
     await WETHPair.mint(wallet.address, overrides)
 
@@ -147,7 +142,7 @@ describe('ExampleFlashSwapArber', () => {
     const profit = balanceAfter.sub(balanceBefore)
     const reservesV1 = [
       await WETHPartner.balanceOf(WETHExchangeV1.address),
-      await provider.getBalance(WETHExchangeV1.address),
+      await provider.getBalance(WETHExchangeV1.address)
     ]
     const priceV1 = reservesV1[0].div(reservesV1[1])
     const reservesV2 = (await WETHPair.getReserves()).slice(0, 2)

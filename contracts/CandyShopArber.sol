@@ -9,6 +9,7 @@ import './interfaces/V1/IUniswapV1Exchange.sol';
 import './interfaces/IUniswapV2Router01.sol';
 import './interfaces/IERC20.sol';
 import './interfaces/IWETH.sol';
+import "@nomiclabs/buidler/console.sol";
 
 
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade

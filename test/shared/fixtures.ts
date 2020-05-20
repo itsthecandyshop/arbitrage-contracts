@@ -14,7 +14,7 @@ import UniswapV1Factory from '../../build/UniswapV1Factory.json'
 import UniswapV2Migrator from '@uniswap/v2-periphery/build/UniswapV2Migrator.json'
 
 const overrides = {
-  gasLimit: 9999999
+  gasLimit: 9500000
 }
 
 interface V2Fixture {

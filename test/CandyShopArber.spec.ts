@@ -10,20 +10,18 @@ import {Contract} from 'ethers'
 import {getWallets} from 'ethereum-waffle'
 import {waffle} from '@nomiclabs/buidler'
 
-const overrides = {
-  gasLimit: 9999999,
-  gasPrice: 0
-}
+const overrides = {}
 
 describe('CandyShopArber', () => {
-  const provider = new MockProvider({
-    hardfork: 'istanbul',
-    mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
-    gasLimit: 9999999
-  })
+  // const provider = new MockProvider({
+  //   hardfork: 'istanbul',
+  //   mnemonic: 'horn horn horn horn horn horn horn horn horn horn horn horn',
+  //   gasLimit: 9999999
+  // })
   // const provider = Waffle.provider
-  console.log(waffle.provider)
-  const [wallet] = getWallets(provider)
+  const provider = waffle.provider
+
+  const [wallet] = provider.getWallets()
   const loadFixture = createFixtureLoader(provider, [wallet])
 
   let WETH: Contract
