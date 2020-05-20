@@ -47,7 +47,7 @@
     "clean": "rimraf ./build/",
     "copy-v1-artifacts": "ncp ./buildV1 ./build",
     "precompile": "yarn clean",
-    "compile": "waffle .waffle.json",
+    "compile": "npx buidler compile",
     "postcompile": "yarn copy-v1-artifacts",
     "pretest": "yarn compile",
     "test": "npx buidler test",
