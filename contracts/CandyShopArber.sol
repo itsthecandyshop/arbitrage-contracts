@@ -164,7 +164,6 @@ contract CandyShopArber is IUniswapV2Callee {
                 reserveETHV1, reserveTokenV1
         );
 
-        // Since we are converting tokens we borrowed from V2 to ETH the direction should be TokenToEth
         require(EthToToken == IsDirectionETHToToken,"Direction invalid");
 
         return (amountIn);
