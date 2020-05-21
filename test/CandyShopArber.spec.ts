@@ -167,11 +167,8 @@ describe('CandyShopArber', () => {
     )
 
     const WETHPairToken0 = await WETHPair.token0()
-    await WETHPartner.approve(WETHExchangeV1.address, expandTo18Decimals(400))
-        await WETHPartner.approve(candyShopArber.address, expandTo18Decimals(400))
-
-    // await WETHExchangeV1.tokenToEthSwapInput(expandTo18Decimals(400),1,MaxUint256)
-    await candyShopArber.TokenToEthSwap(WETHPartner.address, expandTo18Decimals(400), MaxUint256, 1, 1, false)
+    await WETHPartner.approve(candyShopArber.address, expandTo18Decimals(400))
+    await candyShopArber.TokenToEthSwap(WETHPartner.address, expandTo18Decimals(400), MaxUint256, 1, 1, true)
 
     const balanceAfter = await provider.getBalance(wallet.address)
     const profit = balanceAfter.sub(balanceBefore)
