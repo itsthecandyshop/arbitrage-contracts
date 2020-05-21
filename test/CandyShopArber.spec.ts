@@ -46,9 +46,125 @@ describe('CandyShopArber', () => {
     )
     globalFixtures = fixture
   })
+  it('CalculatingAmountAndDirection', async () => {
+    // add liquidity to V1 at a rate of 1 ETH / 200 X
+    const WETHPartnerAmountV1 = expandTo18Decimals(2000)
+    const ETHAmountV1 = expandTo18Decimals(10)
+    await WETHPartner.approve(WETHExchangeV1.address, WETHPartnerAmountV1)
+    await WETHExchangeV1.addLiquidity(bigNumberify(1), WETHPartnerAmountV1, MaxUint256, {
+      ...overrides,
+      value: ETHAmountV1,
+    })
+
+    // add liquidity to V2 at a rate of 1 ETH / 200 X
+    const WETHPartnerAmountV2 = expandTo18Decimals(4000)
+    const ETHAmountV2 = expandTo18Decimals(20)
+    await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
+    await WETH.deposit({ value: ETHAmountV2 })
+    await WETH.transfer(WETHPair.address, ETHAmountV2)
+    await WETHPair.mint(wallet.address, overrides)
+    console.log(
+      'eth:' +
+        formatEther(await provider.getBalance(wallet.address)) +
+        'weth: ' +
+        formatEther(await WETH.balanceOf(wallet.address)) +
+        'wethPartner:' +
+        formatEther(await WETHPartner.balanceOf(wallet.address))
+    )
+
+    var numTokensObtained = await WETHExchangeV1.ethToTokenSwapInput(1, MaxUint256, {
+      ...overrides,
+      value: expandTo18Decimals(1),
+    })
+
+    console.log('=====USER')
+
+    console.log(
+      'eth:' +
+        formatEther(await provider.getBalance(wallet.address)) +
+        'weth: ' +
+        formatEther(await WETH.balanceOf(wallet.address)) +
+        'wethPartner:' +
+        formatEther(await WETHPartner.balanceOf(wallet.address))
+    )
+    console.log('basic exchange done', '1ETH', 'for', numTokensObtained)
+    const reservesV1 = [
+      await WETHPartner.balanceOf(WETHExchangeV1.address),
+      await provider.getBalance(WETHExchangeV1.address),
+    ]
+
+    console.log(
+      'Estimating movement',
+      formatEther(reservesV1[0]),
+      formatEther(reservesV1[1]),
+      reservesV1[0].div(reservesV1[1]).toString()
+    )
+
+    console.log('candyshop')
+    console.log(
+      'eth:' +
+        formatEther(await provider.getBalance(candyShopArber.address)) +
+        'weth: ' +
+        formatEther(await WETH.balanceOf(candyShopArber.address)) +
+        'wethPartner:' +
+        formatEther(await WETHPartner.balanceOf(candyShopArber.address))
+    )
+    const balanceBefore = await provider.getBalance(wallet.address)
+    var result = await candyShopArber.calculateAmountForArbitrage(
+      WETHExchangeV1.address,
+      WETHPartner.address,
+      MaxUint256,
+      false
+    )
+    console.log('result', formatEther(result.toString()))
+
+    var arbitrageAmount = result.toString()
+    console.log('arb amount', arbitrageAmount)
+    const WETHPairToken0 = await WETHPair.token0()
+    const amount0 = WETHPairToken0 === WETHPartner.address ? arbitrageAmount : bigNumberify(0)
+    const amount1 = WETHPairToken0 === WETHPartner.address ? bigNumberify(0) : arbitrageAmount
+    await WETHPair.swap(
+      amount0,
+      amount1,
+      candyShopArber.address,
+      defaultAbiCoder.encode(['uint'], [bigNumberify(1)]),
+      overrides
+    )
+
+    console.log(
+      'eth:' +
+        formatEther(await provider.getBalance(wallet.address)) +
+        'weth: ' +
+        formatEther(await WETH.balanceOf(wallet.address)) +
+        'wethPartner:' +
+        formatEther(await WETHPartner.balanceOf(wallet.address))
+    )
+    console.log('candyshop')
+    console.log(
+      'eth:' +
+        formatEther(await provider.getBalance(candyShopArber.address)) +
+        'weth: ' +
+        formatEther(await WETH.balanceOf(candyShopArber.address)) +
+        'wethPartner:' +
+        formatEther(await WETHPartner.balanceOf(candyShopArber.address))
+    )
+
+    const balanceAfter = await provider.getBalance(wallet.address)
+    const profit = balanceAfter.sub(balanceBefore)
+    const reservesV1Post = [
+      await WETHPartner.balanceOf(WETHExchangeV1.address),
+      await provider.getBalance(WETHExchangeV1.address),
+    ]
+    const priceV1 = reservesV1Post[0].div(reservesV1Post[1])
+    const reservesV2 = (await WETHPair.getReserves()).slice(0, 2)
+    const priceV2 =
+      WETHPairToken0 === WETHPartner.address ? reservesV2[0].div(reservesV2[1]) : reservesV2[1].div(reservesV2[0])
+    console.log('ethers', formatEther(profit), 'V1 price', priceV1.toString(), priceV2.toString())
+  })
+
   it('CandyShopTokensForEth', async () => {
     // add liquidity to V1 at a rate of 1 ETH / 100 X
-    const WETHPartnerAmountV1 = expandTo18Decimals(1000)
+    const WETHPartnerAmountV1 = expandTo18Decimals(2000)
     const ETHAmountV1 = expandTo18Decimals(10)
     await WETHPartner.approve(WETHExchangeV1.address, WETHPartnerAmountV1)
     await WETHExchangeV1.addLiquidity(bigNumberify(1), WETHPartnerAmountV1, MaxUint256, {
@@ -57,18 +173,17 @@ describe('CandyShopArber', () => {
     })
 
     // add liquidity to V2 at a rate of 1 ETH / 100 X
-    const WETHPartnerAmountV2 = expandTo18Decimals(1300)
-    const ETHAmountV2 = expandTo18Decimals(10)
+    const WETHPartnerAmountV2 = expandTo18Decimals(4000)
+    const ETHAmountV2 = expandTo18Decimals(20)
     await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
     await WETH.deposit({ value: ETHAmountV2 })
     await WETH.transfer(WETHPair.address, ETHAmountV2)
     await WETHPair.mint(wallet.address, overrides)
+
     const balanceBefore = await provider.getBalance(wallet.address)
-    console.log('UniswapV1: 1/100 UniswapV2: 1/130')
+    console.log('UniswapV1: 1/200 UniswapV2: 1/200')
     console.log('user holdings after everything listed below')
-    var ethHoldings1 = await provider.getBalance(wallet.address)
-    var wethHoldings1 = await WETH.balanceOf(wallet.address)
-    var wethPartnerHoldings1 = await WETHPartner.balanceOf(wallet.address)
+
     console.log(
       'eth:' +
         formatEther(await provider.getBalance(wallet.address)) +
@@ -79,9 +194,6 @@ describe('CandyShopArber', () => {
     )
 
     console.log('candy shop holdings')
-    var ethHoldings = await provider.getBalance(candyShopArber.address)
-    var wethHoldings = await WETH.balanceOf(candyShopArber.address)
-    var wethPartnerHoldings = await WETHPartner.balanceOf(candyShopArber.address)
     console.log(
       'eth:' +
         formatEther(await provider.getBalance(candyShopArber.address)) +
@@ -90,10 +202,11 @@ describe('CandyShopArber', () => {
         'wethPartner:' +
         formatEther(await WETHPartner.balanceOf(candyShopArber.address))
     )
+
     const WETHPairToken0 = await WETHPair.token0()
     await candyShopArber.EthToTokenSwap(WETHPartner.address, MaxUint256, 1, 1, true, {
       ...overrides,
-      value: expandTo18Decimals(5),
+      value: expandTo18Decimals(1),
     })
 
     const balanceAfter = await provider.getBalance(wallet.address)
@@ -110,10 +223,6 @@ describe('CandyShopArber', () => {
     var balanceOfCandyShop = await provider.getBalance(candyShopArber.address)
     console.log('UniswapV1: 1/' + priceV1.toString() + 'UniswapV2: 1/' + priceV2.toString())
     console.log('user holdings before everything listed below')
-    var ethHoldings = await provider.getBalance(wallet.address)
-    var wethHoldings = await WETH.balanceOf(wallet.address)
-    var wethPartnerHoldings = await WETHPartner.balanceOf(wallet.address)
-
     console.log(
       'eth:' +
         formatEther(await provider.getBalance(wallet.address)) +
@@ -122,11 +231,7 @@ describe('CandyShopArber', () => {
         'wethPartner:' +
         formatEther(await WETHPartner.balanceOf(wallet.address))
     )
-
     console.log('candy shop holdings after everything')
-    var ethHoldings = await provider.getBalance(candyShopArber.address)
-    var wethHoldings = await WETH.balanceOf(candyShopArber.address)
-    var wethPartnerHoldings = await WETHPartner.balanceOf(candyShopArber.address)
     console.log(
       'eth:' +
         formatEther(await provider.getBalance(candyShopArber.address)) +
@@ -135,18 +240,6 @@ describe('CandyShopArber', () => {
         'wethPartner:' +
         formatEther(await WETHPartner.balanceOf(candyShopArber.address))
     )
-    // console.log('candy shop balance', balanceOfCandyShop.toString())
-    // console.log('prices', priceV1.toString(), priceV2.toString())
-    // expect(formatEther(profit)).to.eq('0.548043441089763649') // our profit is ~.5 ETH
-    // expect(priceV1.toString()).to.eq('143') // we pushed the v1 price up to ~143
-    // expect(priceV2.toString()).to.eq('161') // we pushed the v2 price down to ~161
-    // await WETHPair.swap(
-    //   amount0,
-    //   amount1,
-    //   candyShopArber.address,
-    //   defaultAbiCoder.encode(['uint'], [bigNumberify(1)]),
-    //   overrides
-    // )
   })
 })
 

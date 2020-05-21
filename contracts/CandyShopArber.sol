@@ -89,12 +89,11 @@ contract CandyShopArber is IUniswapV2Callee {
             {
             IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
             // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
-            uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(exchangeV1, token,deadline,false);
+            uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(address(exchangeV1), token,deadline,false);
             EthBeforeArb = address(this).balance;
             pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded),address(this),abi.encode(slippageParam));
             }
             require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
-            
             profit = address(this).balance - EthBeforeArb;
             numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: profit}(1, uint(-1));
             require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper"); 
@@ -115,24 +114,23 @@ contract CandyShopArber is IUniswapV2Callee {
 
 
      // calculateAmountForArbitrage calculates how much to arbitrage
-    function calculateAmountForArbitrage(IUniswapV1Exchange exchangeV1, address token,uint256 deadline, bool IsDirectionETHToToken) internal returns(uint256) {
-       // get uniswapV2 reserves
-       (uint256 reserveETHV2, uint256 reserveTokenV2) = UniswapV2Library.getReserves(factory, address(WETH), token);
-        
-       // calulate price on V2
-       uint256 numOfTokensPerEth = UniswapV2Library.quote(ONE, reserveETHV2,reserveTokenV2);
+    function calculateAmountForArbitrage(address exchangeV1, address token,uint256 deadline, bool IsDirectionETHToToken) public view returns(uint256) {
+        uint256 reserveETHV1 = (exchangeV1).balance;
+       uint256 reserveTokenV1 = IERC20(address(token)).balanceOf(exchangeV1); 
+       uint256 price;
 
-       uint256 reserveETHV1 = address(exchangeV1).balance;
-       uint256 reserveTokenV1 = IERC20(address(token)).balanceOf(address(exchangeV1)); 
+        // get uniswapV2 reserves
+       (uint256 reserveETHV2, uint256 reserveTokenV2) = UniswapV2Library.getReserves(factory, address(WETH), token);
+        price = ((reserveTokenV1/reserveETHV1) + (reserveTokenV2/reserveETHV2))/2;
        (bool EthToToken, uint256 amountIn) = computeProfitMaximizingTrade(
-                ONE, numOfTokensPerEth,
+                1, price,
                 reserveETHV1, reserveTokenV1
         );
 
         // Since we are converting tokens we borrowed from V2 to ETH the direction should be TokenToEth
         require(EthToToken == IsDirectionETHToToken,"Direction invalid");
         
-        return amountIn;
+        return (amountIn);
     }
 
     // computes the direction and magnitude of the profit-maximizing tradea
