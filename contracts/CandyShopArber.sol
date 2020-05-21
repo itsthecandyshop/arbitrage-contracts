@@ -119,32 +119,34 @@ contract CandyShopArber is IUniswapV2Callee {
 
     function TokenToEthSwap(address token, uint256 tokensSold,uint256 deadline,uint256 minEth, uint256 slippageParam,bool WithArb) public returns(uint256,uint256) {        
         // execute original trade
-        uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
+        // require(IERC20(token).transferFrom(msg.sender,address(this),tokensSold),"transfer not success");
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
+        uint256 numEthObtained = exchangeV1.tokenToEthSwapInput(tokensSold,minEth, deadline);
         uint256 profit;
         uint256 TokensBeforeArb;
 
-        if (WithArb){
-            {
-                // get v2 exchange
-                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
-                // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
-                uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
+        // if (WithArb){
+        //     {
+        //         // get v2 exchange
+        //         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+        //         // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
+        //         uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
                 
-                // to get the profit we store number of tokens before arbing
-                TokensBeforeArb = IERC20(token).balanceOf(address(this));
+        //         // to get the profit we store number of tokens before arbing
+        //         TokensBeforeArb = IERC20(token).balanceOf(address(this));
                 
-                // finally we execute a arb to reduce slippage
-                pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
-            }
+        //         // finally we execute a arb to reduce slippage
+        //         pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
+        //     }
 
-            // revert if we didnt get profit
-            require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
-            profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
+        //     // revert if we didnt get profit
+        //     require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
+        //     profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
             
-            // TODO convert portion of profits to buy tickets from lottery
-            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(profit,1,deadline);
-            msg.sender.transfer(numEthObtained);
-        }
+        //     // TODO convert portion of profits to buy tickets from lottery
+        //     numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(profit,1,deadline);
+        //     msg.sender.transfer(numEthObtained);
+        // }
         return (numEthObtained,profit);
     }
 
