@@ -3,6 +3,8 @@ pragma solidity =0.6.6;
 // a library for performing overflow-safe math, courtesy of DappHub (https://github.com/dapphub/ds-math)
 
 library SafeMath {
+    uint constant WAD = 10 ** 18;
+    
     function add(uint x, uint y) internal pure returns (uint z) {
         require((z = x + y) >= x, 'ds-math-add-overflow');
     }
@@ -19,4 +21,13 @@ library SafeMath {
         require(b != 0, "modulo-by-zero");
         return a % b;
     }
+
+    function wmul(uint x, uint y) internal pure returns (uint z) {
+        z = add(mul(x, y), WAD / 2) / WAD;
+    }
+
+    function wdiv(uint x, uint y) internal pure returns (uint z) {
+        z = add(mul(x, WAD), y / 2) / y;
+    }
+
 }

@@ -91,7 +91,9 @@ contract CandyShopArber is IUniswapV2Callee {
         amountIn = leftSide.sub(rightSide);
     }
 
-    function getEthToDaiAmt(uint candyProfit, uint candyPrice) public view returns(uint extraAmount, uint requiredAmt){
+    function getEthToDaiProfit(uint totalProfit) public view returns(uint requiredAmt){
+        uint candyPrice = governance.candyPrice();
+        uint candyProfit = totalProfit * 2 / 10;
         address[] memory paths = new address[](2);
         paths[0] = router01.WETH();
         paths[1] = address(stableToken);
@@ -100,11 +102,28 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
-        extraAmount = amts[1].mod(candyPrice);
+        uint extraAmount = amts[1].mod(candyPrice);
         requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
 
-    function getTokenToDaiAmt(address token, uint candyProfit, uint candyPrice) public view returns(uint extraAmount, uint requiredAmt){
+    function getEthToDaiFee(uint totalAmt) public view returns(uint requiredAmt){
+        uint candyFee = governance.fee();
+        uint candyProfit = totalAmt.wmul(candyFee);
+        address[] memory paths = new address[](2);
+        paths[0] = router01.WETH();
+        paths[1] = address(stableToken);
+        uint[] memory amts = router01.getAmountsOut(
+            candyProfit,
+            paths
+        );
+
+        uint extraAmount = amts[1].mod(candyFee);
+        requiredAmt = extraAmount > (candyFee * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
+    }
+
+    function getTokenToDaiProfit(address token, uint totalProfit) public view returns(uint requiredAmt){
+        uint candyPrice = governance.candyPrice();
+        uint candyProfit = totalProfit * 2 / 10;
         address[] memory paths = new address[](2);
         paths[0] = token;
         paths[1] = address(stableToken);
@@ -113,8 +132,23 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
-        extraAmount = amts[1].mod(candyPrice);
+        uint extraAmount = amts[1].mod(candyPrice);
         requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
+    }
+
+    function getTokenToDaiFee(address token, uint totalAmt) public view returns(uint requiredAmt){
+        uint candyFee = governance.fee();
+        uint candyProfit = totalAmt.wmul(candyFee);
+        address[] memory paths = new address[](2);
+        paths[0] = token;
+        paths[1] = address(stableToken);
+        uint[] memory amts = router01.getAmountsOut(
+            candyProfit,
+            paths
+        );
+
+        uint extraAmount = amts[1].mod(candyFee);
+        requiredAmt = extraAmount > (candyFee * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
     }
 
     // gets tokens/WETH via a V2 flash swap, swaps for the ETH/tokens on V1, repays V2, and keeps the rest!
@@ -169,7 +203,8 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 deadline,
         uint256 minTokens,
         uint256 slippageParam,
-        bool WithArb
+        bool WithArb,
+        bool withCandy
     ) public payable returns(uint256, uint256){
         // get V1 contract exchange
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
@@ -195,11 +230,17 @@ contract CandyShopArber is IUniswapV2Callee {
             require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
             uint profit = address(this).balance - EthBeforeArb;
 
-            
-            leftProfit = swapEthToDai(profit, true);
+            uint requiredDai = getEthToDaiProfit(profit);
+            leftProfit = swapEthToDai(requiredDai, profit, true);
 
             numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
             require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
+        } else {
+            if (withCandy) {
+                uint requiredDai = getTokenToDaiFee(token, numTokensObtained);
+                uint leftAmt = swapTokenToDai(token, requiredDai, numTokensObtained, true);
+                numTokensObtained -= leftAmt;
+            }
         }
         return (numTokensObtained, leftProfit);
     }
@@ -211,7 +252,8 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 deadline,
         uint256 minEth,
         uint256 slippageParam,
-        bool WithArb
+        bool WithArb,
+        bool withCandy
     ) public returns(uint256, uint256) {        
         // execute original trade
         uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
@@ -236,23 +278,27 @@ contract CandyShopArber is IUniswapV2Callee {
             require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
             uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
             
-            leftProfit = swapTokenToDai(token, profit, true);
+            uint requiredDai = getTokenToDaiProfit(token, profit);
+            leftProfit = swapTokenToDai(token, requiredDai, profit, true);
 
             numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit,1,deadline);
             msg.sender.transfer(numEthObtained);
+        } else {
+            if (withCandy) {
+                uint requiredDai = getEthToDaiFee(numEthObtained);
+                uint leftAmt = swapEthToDai(requiredDai, numEthObtained, true);
+                numEthObtained -= leftAmt;
+            }
         }
         return (numEthObtained, leftProfit);
     }
 
-    function swapEthToDai(uint totalProfit, bool isIn) internal returns(uint leftProfit) {
-        uint candyPrice = governance.candyPrice();
-        uint candyProfit = totalProfit * 2 / 10;
-        (,uint daiAmt) = getEthToDaiAmt(candyProfit, candyPrice);
+    function swapEthToDai(uint daiAmt, uint totalAmt, bool isIn) internal returns(uint leftAmt) {
         address[] memory paths = new address[](2);
         paths[0] = router01.WETH();
         paths[1] = address(stableToken);
         uint intialBal = address(this).balance;
-        router01.swapETHForExactTokens.value(totalProfit)(
+        router01.swapETHForExactTokens.value(totalAmt)(
             daiAmt,
             paths,
             msg.sender,
@@ -266,21 +312,18 @@ contract CandyShopArber is IUniswapV2Callee {
             msg.sender, //TODO - have to set `to` address,
             isIn
         );
-        leftProfit = intialBal.sub(finialBal);
+        leftAmt = intialBal.sub(finialBal);
     }
 
-    function swapTokenToDai(address token, uint totalProfit, bool isIn) internal returns(uint leftProfit) {
-        uint candyPrice = governance.candyPrice();
+    function swapTokenToDai(address token, uint daiAmt, uint totalAmt, bool isIn) internal returns(uint leftAmt) {
         IERC20 tokenContract = IERC20(token);
-        uint candyProfit = totalProfit * 2 / 10;
-        (,uint daiAmt) = getTokenToDaiAmt(token, candyProfit, candyPrice);
         address[] memory paths = new address[](2);
         paths[0] = token;
         paths[1] = address(stableToken);
         uint intialBal = tokenContract.balanceOf(address(this));
         router01.swapTokensForExactTokens(
             daiAmt,
-            totalProfit,
+            totalAmt,
             paths,
             msg.sender,
             now + 1 days
@@ -293,7 +336,7 @@ contract CandyShopArber is IUniswapV2Callee {
             msg.sender, //TODO - have to set `to` address,
             isIn
         );
-        leftProfit = intialBal.sub(finialBal);
+        leftAmt = intialBal.sub(finialBal);
     }
 
     /**
@@ -313,7 +356,8 @@ contract CandyShopArber is IUniswapV2Callee {
         uint minBuyAmt,
         uint slippage,
         uint deadline,
-        bool WithArb
+        bool WithArb,
+        bool withCandy
     ) external payable {
         if (buyAddr == ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
@@ -322,7 +366,8 @@ contract CandyShopArber is IUniswapV2Callee {
                 deadline,
                 minBuyAmt,
                 slippage,
-                WithArb
+                WithArb,
+                withCandy
             );
         } else {
             TokenToEthSwap(
@@ -331,7 +376,8 @@ contract CandyShopArber is IUniswapV2Callee {
                 deadline,
                 minBuyAmt,
                 slippage,
-                WithArb
+                WithArb,
+                withCandy
             );
         }
     }
