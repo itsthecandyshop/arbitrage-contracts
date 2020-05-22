@@ -102,6 +102,7 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
+        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
         uint extraAmount = amts[1].mod(candyPrice);
         requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
@@ -109,6 +110,7 @@ contract CandyShopArber is IUniswapV2Callee {
     function getEthToDaiFee(uint totalAmt) public view returns(uint requiredAmt){
         uint candyFee = governance.fee();
         uint candyProfit = totalAmt.wmul(candyFee);
+        uint candyPrice = governance.candyPrice();
         address[] memory paths = new address[](2);
         paths[0] = router01.WETH();
         paths[1] = address(stableToken);
@@ -117,8 +119,9 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
-        uint extraAmount = amts[1].mod(candyFee);
-        requiredAmt = extraAmount > (candyFee * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
+        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
+        uint extraAmount = amts[1].mod(candyPrice);
+        requiredAmt = extraAmount > (candyPrice * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
     }
 
     function getTokenToDaiProfit(address token, uint totalProfit) public view returns(uint requiredAmt){
@@ -132,6 +135,7 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
+        require(amts[1] >= candyPrice, "CS: Total profit was less than candy price");
         uint extraAmount = amts[1].mod(candyPrice);
         requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
@@ -139,6 +143,7 @@ contract CandyShopArber is IUniswapV2Callee {
     function getTokenToDaiFee(address token, uint totalAmt) public view returns(uint requiredAmt){
         uint candyFee = governance.fee();
         uint candyProfit = totalAmt.wmul(candyFee);
+        uint candyPrice = governance.candyPrice();
         address[] memory paths = new address[](2);
         paths[0] = token;
         paths[1] = address(stableToken);
@@ -147,8 +152,9 @@ contract CandyShopArber is IUniswapV2Callee {
             paths
         );
 
-        uint extraAmount = amts[1].mod(candyFee);
-        requiredAmt = extraAmount > (candyFee * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
+        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
+        uint extraAmount = amts[1].mod(candyPrice);
+        requiredAmt = extraAmount > (candyPrice * 8 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
 
     // gets tokens/WETH via a V2 flash swap, swaps for the ETH/tokens on V1, repays V2, and keeps the rest!
@@ -361,7 +367,7 @@ contract CandyShopArber is IUniswapV2Callee {
         bool WithArb,
         bool withCandy
     ) external payable {
-        if (buyAddr == ethAddr) {
+        if (buyAddr != ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
             EthToTokenSwap(
                 buyAddr,
