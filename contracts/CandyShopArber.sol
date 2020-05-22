@@ -239,7 +239,7 @@ contract CandyShopArber is IUniswapV2Callee {
             if (withCandy) {
                 uint requiredDai = getTokenToDaiFee(token, numTokensObtained);
                 uint leftAmt = swapTokenToDai(token, requiredDai, numTokensObtained, true);
-                numTokensObtained -= leftAmt;
+                numTokensObtained = leftAmt;
             }
         }
         return (numTokensObtained, leftProfit);
@@ -287,7 +287,7 @@ contract CandyShopArber is IUniswapV2Callee {
             if (withCandy) {
                 uint requiredDai = getEthToDaiFee(numEthObtained);
                 uint leftAmt = swapEthToDai(requiredDai, numEthObtained, true);
-                numEthObtained -= leftAmt;
+                numEthObtained = leftAmt;
             }
         }
         return (numEthObtained, leftProfit);
