@@ -10,6 +10,8 @@ import './libraries/UniswapV2Library.sol';
 import './interfaces/V1/IUniswapV1Factory.sol';
 import './interfaces/V1/IUniswapV1Exchange.sol';
 import './interfaces/IUniswapV2Router01.sol';
+import './interfaces/governance.sol';
+import './interfaces/candyStore.sol';
 import './interfaces/IERC20.sol';
 import './interfaces/IWETH.sol';
 import './libraries/SafeMath.sol';
@@ -25,12 +27,23 @@ contract CandyShopArber is IUniswapV2Callee {
     IUniswapV2Router01 immutable router01;
     IWETH immutable WETH;
 
+    GovernanceInterface immutable governance;
+    IERC20 public stableToken;
+
     uint256 ONE = 1000000000000000000; 
-    constructor(address _factory, address _factoryV1, address router) public {
+    constructor(
+        address _factory,
+        address _factoryV1,
+        address router,
+        address _governance,
+        address token
+    ) public {
         factoryV1 = IUniswapV1Factory(_factoryV1);
         factory = _factory;
         router01 = IUniswapV2Router01(router); 
         WETH = IWETH(IUniswapV2Router01(router).WETH());
+        governance = GovernanceInterface(_governance);
+        stableToken = IERC20(token);
     }
 
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
@@ -109,9 +122,11 @@ contract CandyShopArber is IUniswapV2Callee {
             require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
             profit = address(this).balance - EthBeforeArb;
 
-            // TODO convert a portion of profits to buy tickets from lottery
-            numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: profit}(1, uint(-1));
-            require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
+            swapEthToDai(profit, true);
+
+            // TODO - Have to comfirm this.
+            // numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: profit}(1, uint(-1));
+            // require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
         }
         return (numTokensObtained,profit);
     }
@@ -141,9 +156,11 @@ contract CandyShopArber is IUniswapV2Callee {
             require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
             profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
             
-            // TODO convert portion of profits to buy tickets from lottery
-            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(profit,1,deadline);
-            msg.sender.transfer(numEthObtained);
+            swapTokenToDai(token, profit, true);
+
+            // TODO - Have to comfirm this.
+            // numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(profit,1,deadline);
+            // msg.sender.transfer(numEthObtained);
         }
         return (numEthObtained,profit);
     }
@@ -189,4 +206,88 @@ contract CandyShopArber is IUniswapV2Callee {
         // compute the amount that must be sent to move the price to the profit-maximizing price
         amountIn = leftSide.sub(rightSide);
     }
+
+    function getEthToDaiAmt(uint candyProfit, uint candyPrice) public view returns(uint extraAmount, uint requiredAmt){
+        address[] memory paths = new address[](2);
+        paths[0] = router01.WETH();
+        paths[1] = address(stableToken);
+        uint[] memory amts = router01.getAmountsOut(
+            candyProfit,
+            paths
+        );
+
+        extraAmount = amts[1].mod(candyPrice);
+        requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
+    }
+
+    function getTokenToDaiAmt(address token, uint candyProfit, uint candyPrice) public view returns(uint extraAmount, uint requiredAmt){
+        address[] memory paths = new address[](2);
+        paths[0] = token;
+        paths[1] = address(stableToken);
+        uint[] memory amts = router01.getAmountsOut(
+            candyProfit,
+            paths
+        );
+
+        extraAmount = amts[1].mod(candyPrice);
+        requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
+    }
+
+    event LogSwapTokenToDai(uint[] amts);
+    event LogSwapEthToDai(uint[] amts);
+
+    function swapEthToDai(uint totalProfit, bool isIn) internal {
+        uint candyPrice = governance.candyPrice();
+        uint candyProfit = totalProfit * 2 / 10;
+        (,uint daiAmt) = getEthToDaiAmt(candyProfit, candyPrice);
+        address[] memory paths = new address[](2);
+        paths[0] = router01.WETH();
+        paths[1] = address(stableToken);
+        uint intialBal = address(this).balance;
+        uint[] memory amts = router01.swapETHForExactTokens.value(totalProfit)(
+            daiAmt,
+            paths,
+            msg.sender,
+            now + 1 days
+        );
+        uint finialBal = address(this).balance;
+        msg.sender.transfer(intialBal.sub(finialBal));
+        CandyStoreInterface(governance.candyStore()).buyCandy(
+            address(stableToken),
+            daiAmt,
+            msg.sender, //TODO - have to set `to` address,
+            isIn
+        );
+        stableToken.approve(governance.candyStore(), daiAmt);
+        emit LogSwapEthToDai(amts);
+    }
+
+    function swapTokenToDai(address token, uint totalProfit, bool isIn) internal {
+        uint candyPrice = governance.candyPrice();
+        IERC20 tokenContract = IERC20(token);
+        uint candyProfit = totalProfit * 2 / 10;
+        (,uint daiAmt) = getTokenToDaiAmt(token, candyProfit, candyPrice);
+        address[] memory paths = new address[](2);
+        paths[0] = token;
+        paths[1] = address(stableToken);
+        uint intialBal = tokenContract.balanceOf(address(this));
+        uint[] memory amts = router01.swapTokensForExactTokens(
+            daiAmt,
+            totalProfit,
+            paths,
+            msg.sender,
+            now + 1 days
+        );
+        uint finialBal = tokenContract.balanceOf(address(this));
+        tokenContract.transfer(msg.sender, intialBal.sub(finialBal));
+        stableToken.approve(governance.candyStore(), daiAmt);
+        CandyStoreInterface(governance.candyStore()).buyCandy(
+            address(stableToken),
+            daiAmt,
+            msg.sender, //TODO - have to set `to` address,
+            isIn
+        );
+        emit LogSwapTokenToDai(amts);
+    }
+
 }
