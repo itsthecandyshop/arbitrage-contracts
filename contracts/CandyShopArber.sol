@@ -166,7 +166,13 @@ contract CandyShopArber is IUniswapV2Callee {
             uint profit = address(this).balance - EthBeforeArb;
 
             leftProfit = LotterySwapInterface(governance.lotterySwap())
-            .swapEthToDai{value: (profit)}(msg.sender, profit, false, true);
+            .swapEthToDai{value: (profit)}(
+                msg.sender, // Sender of the swap
+                msg.sender, // Buy candies for addresss
+                profit, // profit to split
+                false, // candies are brought by fee or profit (fee=>true)
+                true // to participate in lottery or not
+            );
 
             numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
             require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
@@ -174,7 +180,14 @@ contract CandyShopArber is IUniswapV2Callee {
             if (withCandy) {
                 require(IERC20(token).approve(governance.lotterySwap(), numTokensObtained), "approve not successfull");
                 numTokensObtained = LotterySwapInterface(governance.lotterySwap())
-                    .swapTokenToDai(msg.sender, token, numTokensObtained, true, true);
+                    .swapTokenToDai(
+                        msg.sender, // Sender of the swap
+                        msg.sender, // Buy candies for addresss
+                        token, // token address
+                        numTokensObtained, // amount fee will be charged
+                        true, // candies are brought by fee or profit(profit=>false)
+                        true // to participate in lottery or not
+                    );
             }
         }
         return (numTokensObtained, leftProfit);
@@ -217,7 +230,14 @@ contract CandyShopArber is IUniswapV2Callee {
             
             require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
             leftProfit = LotterySwapInterface(governance.lotterySwap())
-                    .swapTokenToDai(msg.sender, token, profit, false, true);
+                    .swapTokenToDai(
+                        msg.sender,
+                        msg.sender,
+                        token,
+                        profit,
+                        false,
+                        true
+                    );
 
             require(IERC20(token).approve(address(IUniswapV1Exchange(factoryV1.getExchange(token))), leftProfit),"approve not successfull");
             numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
@@ -226,7 +246,13 @@ contract CandyShopArber is IUniswapV2Callee {
         } else {
             if (withCandy) {
                 numEthObtained =  LotterySwapInterface(governance.lotterySwap())
-                    .swapEthToDai{value: numEthObtained}(msg.sender, numEthObtained, true, true);
+                    .swapEthToDai{value: numEthObtained}(
+                        msg.sender,
+                        msg.sender,
+                        numEthObtained,
+                        true,
+                        true
+                    );
             }
         }
         return (numEthObtained, leftProfit);

@@ -8,6 +8,7 @@ interface LotterySwapInterface {
 
     function swapEthToDai(
         address payable user,
+        address candyFor,
         uint totalAmt,
         bool isFee,
         bool isIn
@@ -15,6 +16,7 @@ interface LotterySwapInterface {
 
     function swapTokenToDai(
         address user,
+        address candyFor,
         address token,
         uint totalAmt,
         bool isFee,
