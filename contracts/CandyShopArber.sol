@@ -301,7 +301,7 @@ contract CandyShopArber is IUniswapV2Callee {
         router01.swapETHForExactTokens.value(totalAmt)(
             daiAmt,
             paths,
-            msg.sender,
+            address(this),
             now + 1 days
         );
         uint finialBal = address(this).balance;
@@ -325,7 +325,7 @@ contract CandyShopArber is IUniswapV2Callee {
             daiAmt,
             totalAmt,
             paths,
-            msg.sender,
+            address(this),
             now + 1 days
         );
         uint finialBal = tokenContract.balanceOf(address(this));
