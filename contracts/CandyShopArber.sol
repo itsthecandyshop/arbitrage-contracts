@@ -133,6 +133,37 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
     
+    function _ethToTokenArbs(
+        address token,
+        IUniswapV1Exchange exchangeV1,
+        uint slippageParam
+    ) internal returns(uint numTokensObtained, uint leftProfit) {
+        uint256 EthBeforeArb;
+        IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+        // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
+        uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
+
+        // to get the profit we store number of tokens before arbing
+        EthBeforeArb = address(this).balance;
+
+        // finally we execute a arb to reduce slippage
+        pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded), address(this), abi.encode(slippageParam));
+        // revert if we didnt get profit
+        require(address(this).balance > EthBeforeArb,"CS: Candy shop should have profit to split");
+        uint profit = address(this).balance - EthBeforeArb;
+
+        leftProfit = LotterySwapInterface(governance.lotterySwap())
+        .swapEthToDai{value: (profit)}(
+            msg.sender, // Sender of the swap
+            msg.sender, // Buy candies for addresss
+            profit, // profit to split
+            false, // candies are brought by fee or profit (fee=>true)
+            true // to participate in lottery or not
+        );
+
+        numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
+        require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed");
+    }
 
     function EthToTokenSwap(
         address token,
@@ -148,34 +179,12 @@ contract CandyShopArber is IUniswapV2Callee {
         // execute original trade
         uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
         uint256 leftProfit;
-        uint256 EthBeforeArb;
         if (WithArb){
-            {
-                 IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
-                // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
-                uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
-
-                // to get the profit we store number of tokens before arbing
-                EthBeforeArb = address(this).balance;
-
-                // finally we execute a arb to reduce slippage
-                pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded), address(this), abi.encode(slippageParam));
-            }
-            // revert if we didnt get profit
-            require(address(this).balance > EthBeforeArb,"CS: Candy shop should have profit to split");
-            uint profit = address(this).balance - EthBeforeArb;
-
-            leftProfit = LotterySwapInterface(governance.lotterySwap())
-            .swapEthToDai{value: (profit)}(
-                msg.sender, // Sender of the swap
-                msg.sender, // Buy candies for addresss
-                profit, // profit to split
-                false, // candies are brought by fee or profit (fee=>true)
-                true // to participate in lottery or not
-            );
-
-            numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
-            require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
+             (numTokensObtained, leftProfit) = _ethToTokenArbs(
+                    token,
+                    exchangeV1,
+                    slippageParam
+                );
         } else {
             if (withCandy) {
                 require(IERC20(token).approve(governance.lotterySwap(), numTokensObtained), "approve not successfull");
@@ -193,6 +202,44 @@ contract CandyShopArber is IUniswapV2Callee {
         return (numTokensObtained, leftProfit);
     }
 
+    function _TokenToEthArbs(
+        address token,
+        IUniswapV1Exchange exchangeV1,
+        uint slippageParam,
+        uint deadline
+    ) internal returns(uint numEthObtained, uint leftProfit) {
+        uint256 TokensBeforeArb;
+
+        IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+        // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
+        uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
+        
+        // to get the profit we store number of tokens before arbing
+        TokensBeforeArb = IERC20(token).balanceOf(address(this));
+        
+        // finally we execute a arb to reduce slippage
+        pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
+
+        // revert if we didnt get profit
+        require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
+        uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
+        
+        require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
+        leftProfit = LotterySwapInterface(governance.lotterySwap())
+                .swapTokenToDai(
+                    msg.sender,
+                    msg.sender,
+                    token,
+                    profit,
+                    false,
+                    true
+                );
+
+        require(IERC20(token).approve(address(exchangeV1), leftProfit), "approve not successfull");
+        numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
+        (bool success,) = (msg.sender).call{value: numEthObtained}(new bytes(0)); // keep the rest! (ETH)
+        require(success,"ETH transfer failed");
+    }
 
     function TokenToEthSwap(
         address token,
@@ -202,47 +249,21 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 slippageParam,
         bool WithArb,
         bool withCandy
-    ) public returns(uint256, uint256) {        
+    ) public returns(uint256, uint256) {   
+        // get V1 contract exchange
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));     
         // execute original trade
         require(IERC20(token).transferFrom(msg.sender,address(this),tokensSold),"transferFrom failed");
-        require(IERC20(token).approve(address(IUniswapV1Exchange(factoryV1.getExchange(token))),tokensSold),"transfer not successfull");
-        uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
+        require(IERC20(token).approve(address(exchangeV1), tokensSold),"transfer not successfull");
+        uint256 numEthObtained = exchangeV1.tokenToEthSwapInput(tokensSold, minEth, deadline);
         uint256 leftProfit;
-        uint256 TokensBeforeArb;
-
         if (WithArb){
-            {
-                // get v2 exchange
-                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
-                // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
-                uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
-                
-                // to get the profit we store number of tokens before arbing
-                TokensBeforeArb = IERC20(token).balanceOf(address(this));
-                
-                // finally we execute a arb to reduce slippage
-                pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
-            }
-
-            // revert if we didnt get profit
-            require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
-            uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
-            
-            require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
-            leftProfit = LotterySwapInterface(governance.lotterySwap())
-                    .swapTokenToDai(
-                        msg.sender,
-                        msg.sender,
-                        token,
-                        profit,
-                        false,
-                        true
-                    );
-
-            require(IERC20(token).approve(address(IUniswapV1Exchange(factoryV1.getExchange(token))), leftProfit),"approve not successfull");
-            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
-            (bool success,) = (msg.sender).call{value: numEthObtained}(new bytes(0)); // keep the rest! (ETH)
-            require(success,"ETH transfer failed");
+            (numEthObtained, leftProfit) = _TokenToEthArbs(
+                                                token,
+                                                exchangeV1,
+                                                slippageParam,
+                                                deadline
+                                            );
         } else {
             if (withCandy) {
                 numEthObtained =  LotterySwapInterface(governance.lotterySwap())
