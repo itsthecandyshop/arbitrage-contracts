@@ -22,6 +22,8 @@ import './libraries/SafeMath.sol';
 contract CandyShopArber is IUniswapV2Callee {
     using SafeMath for uint256;
 
+    address ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
     IUniswapV1Factory immutable factoryV1;
     address immutable factory;
     IUniswapV2Router01 immutable router01;
@@ -31,6 +33,7 @@ contract CandyShopArber is IUniswapV2Callee {
     IERC20 public stableToken;
 
     uint256 ONE = 1000000000000000000; 
+    
     constructor(
         address _factory,
         address _factoryV1,
@@ -44,125 +47,6 @@ contract CandyShopArber is IUniswapV2Callee {
         WETH = IWETH(IUniswapV2Router01(router).WETH());
         governance = GovernanceInterface(_governance);
         stableToken = IERC20(token);
-    }
-
-    // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
-    // but it's not possible because it requires a call to the v1 factory, which takes too much gas
-    receive() external payable {}
-
-    // gets tokens/WETH via a V2 flash swap, swaps for the ETH/tokens on V1, repays V2, and keeps the rest!
-    function uniswapV2Call(address sender, uint amount0, uint amount1, bytes calldata data) external override {
-        address[] memory path = new address[](2);
-        uint amountToken;
-        uint amountETH;
-        { // scope for token{0,1}, avoids stack too deep errors
-        address token0 = IUniswapV2Pair(msg.sender).token0();
-        address token1 = IUniswapV2Pair(msg.sender).token1();
-        require(msg.sender == UniswapV2Library.pairFor(factory, token0, token1),"CS: Msg sender is not the uniswapV2 pair"); // ensure that msg.sender is actually a V2 pair
-        require(amount0 == 0 || amount1 == 0,"CS: One of the amounts should be zero"); // this strategy is unidirectional
-        path[0] = amount0 == 0 ? token0 : token1;
-        path[1] = amount0 == 0 ? token1 : token0;
-        amountToken = token0 == address(WETH) ? amount1 : amount0;
-        amountETH = token0 == address(WETH) ? amount0 : amount1;
-        }
-
-        require(path[0] == address(WETH) || path[1] == address(WETH),"CS: Path should contain WETH address"); // this strategy only works with a V2 WETH pair
-        IERC20 token = IERC20(path[0] == address(WETH) ? path[1] : path[0]);
-        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(address(token))); // get V1 exchange
-
-        if (amountToken > 0) {
-            // we have tokens on loan which we want to swap for ETH on V1 and return the ETH as WETH back to V2
-            (uint minETH) = abi.decode(data, (uint)); // slippage parameter for V1, passed in by caller
-            token.approve(address(exchangeV1), amountToken);
-            uint amountReceived = exchangeV1.tokenToEthSwapInput(amountToken, minETH, uint(-1));           
-            uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountToken, path)[0];
-            require(amountReceived > amountRequired,"CS: Not enough ETH to payback loan"); // fail if we didn't get enough ETH back to repay our flash loan
-            WETH.deposit{value: amountRequired}();
-            require(WETH.transfer(msg.sender, amountRequired),"CS: Flash loan repayment failed"); // return WETH to V2 pair
-
-            // TODO we can remove this as its the same contract
-            (bool success,) = sender.call{value: amountReceived - amountRequired}(new bytes(0)); // keep the rest! (ETH)
-            require(success,"ETH transfer failed");
-        } else {
-            (uint minTokens) = abi.decode(data, (uint)); // slippage parameter for V1, passed in by caller
-            WETH.withdraw(amountETH);
-            uint amountReceived = exchangeV1.ethToTokenSwapInput{value: amountETH}(minTokens, uint(-1));
-            uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountETH, path)[0];
-            require(amountReceived > amountRequired,"CS: Not enough tokens to payback loan"); // fail if we didn't get enough tokens back to repay our flash loan
-            require(token.transfer(msg.sender, amountRequired),"CS: Paying back loan failed"); // return tokens to V2 pair
-            
-            // TODO: Remove this as its the same contract
-            require(token.transfer(sender, amountReceived - amountRequired),"CS: Token transfer to original transfer failed"); // keep the rest! (tokens)
-        }
-    }
-    
-
-    function EthToTokenSwap(address token, uint256 deadline,uint256 minTokens, uint256 slippageParam,bool WithArb) public payable returns(uint256,uint256){
-        // get V1 contract exchange
-        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
-
-        // execute original trade
-        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
-        uint256 profit;
-        uint256 EthBeforeArb;
-        if (WithArb){
-            {
-                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
-                // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
-                uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
-
-                // to get the profit we store number of tokens before arbing
-                EthBeforeArb = address(this).balance;
-
-                // finally we execute a arb to reduce slippage
-                pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded),address(this),abi.encode(slippageParam));
-            }
-
-            // revert if we didnt get profit
-            require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
-            profit = address(this).balance - EthBeforeArb;
-
-            swapEthToDai(profit, true);
-
-            // TODO - Have to comfirm this.
-            // numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: profit}(1, uint(-1));
-            // require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
-        }
-        return (numTokensObtained,profit);
-    }
-
-
-    function TokenToEthSwap(address token, uint256 tokensSold,uint256 deadline,uint256 minEth, uint256 slippageParam,bool WithArb) public returns(uint256,uint256) {        
-        // execute original trade
-        uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
-        uint256 profit;
-        uint256 TokensBeforeArb;
-
-        if (WithArb){
-            {
-                // get v2 exchange
-                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
-                // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
-                uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
-                
-                // to get the profit we store number of tokens before arbing
-                TokensBeforeArb = IERC20(token).balanceOf(address(this));
-                
-                // finally we execute a arb to reduce slippage
-                pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
-            }
-
-            // revert if we didnt get profit
-            require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
-            profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
-            
-            swapTokenToDai(token, profit, true);
-
-            // TODO - Have to comfirm this.
-            // numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(profit,1,deadline);
-            // msg.sender.transfer(numEthObtained);
-        }
-        return (numEthObtained,profit);
     }
 
 
@@ -233,10 +117,134 @@ contract CandyShopArber is IUniswapV2Callee {
         requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
 
-    event LogSwapTokenToDai(uint[] amts);
-    event LogSwapEthToDai(uint[] amts);
+    // gets tokens/WETH via a V2 flash swap, swaps for the ETH/tokens on V1, repays V2, and keeps the rest!
+    function uniswapV2Call(address sender, uint amount0, uint amount1, bytes calldata data) external override {
+        address[] memory path = new address[](2);
+        uint amountToken;
+        uint amountETH;
+        { // scope for token{0,1}, avoids stack too deep errors
+        address token0 = IUniswapV2Pair(msg.sender).token0();
+        address token1 = IUniswapV2Pair(msg.sender).token1();
+        require(msg.sender == UniswapV2Library.pairFor(factory, token0, token1),"CS: Msg sender is not the uniswapV2 pair"); // ensure that msg.sender is actually a V2 pair
+        require(amount0 == 0 || amount1 == 0,"CS: One of the amounts should be zero"); // this strategy is unidirectional
+        path[0] = amount0 == 0 ? token0 : token1;
+        path[1] = amount0 == 0 ? token1 : token0;
+        amountToken = token0 == address(WETH) ? amount1 : amount0;
+        amountETH = token0 == address(WETH) ? amount0 : amount1;
+        }
 
-    function swapEthToDai(uint totalProfit, bool isIn) internal {
+        require(path[0] == address(WETH) || path[1] == address(WETH),"CS: Path should contain WETH address"); // this strategy only works with a V2 WETH pair
+        IERC20 token = IERC20(path[0] == address(WETH) ? path[1] : path[0]);
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(address(token))); // get V1 exchange
+
+        if (amountToken > 0) {
+            // we have tokens on loan which we want to swap for ETH on V1 and return the ETH as WETH back to V2
+            (uint minETH) = abi.decode(data, (uint)); // slippage parameter for V1, passed in by caller
+            token.approve(address(exchangeV1), amountToken);
+            uint amountReceived = exchangeV1.tokenToEthSwapInput(amountToken, minETH, uint(-1));           
+            uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountToken, path)[0];
+            require(amountReceived > amountRequired,"CS: Not enough ETH to payback loan"); // fail if we didn't get enough ETH back to repay our flash loan
+            WETH.deposit{value: amountRequired}();
+            require(WETH.transfer(msg.sender, amountRequired),"CS: Flash loan repayment failed"); // return WETH to V2 pair
+
+            // TODO we can remove this as its the same contract
+            (bool success,) = sender.call{value: amountReceived - amountRequired}(new bytes(0)); // keep the rest! (ETH)
+            require(success,"ETH transfer failed");
+        } else {
+            (uint minTokens) = abi.decode(data, (uint)); // slippage parameter for V1, passed in by caller
+            WETH.withdraw(amountETH);
+            uint amountReceived = exchangeV1.ethToTokenSwapInput{value: amountETH}(minTokens, uint(-1));
+            uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountETH, path)[0];
+            require(amountReceived > amountRequired,"CS: Not enough tokens to payback loan"); // fail if we didn't get enough tokens back to repay our flash loan
+            require(token.transfer(msg.sender, amountRequired),"CS: Paying back loan failed"); // return tokens to V2 pair
+            
+            // TODO: Remove this as its the same contract
+            require(token.transfer(sender, amountReceived - amountRequired),"CS: Token transfer to original transfer failed"); // keep the rest! (tokens)
+        }
+    }
+    
+
+    function EthToTokenSwap(
+        address token,
+        uint256 deadline,
+        uint256 minTokens,
+        uint256 slippageParam,
+        bool WithArb
+    ) public payable returns(uint256, uint256){
+        // get V1 contract exchange
+        IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
+
+        // execute original trade
+        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
+        uint256 leftProfit;
+        uint256 EthBeforeArb;
+        if (WithArb){
+            {
+                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+                // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
+                uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
+
+                // to get the profit we store number of tokens before arbing
+                EthBeforeArb = address(this).balance;
+
+                // finally we execute a arb to reduce slippage
+                pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded), address(this), abi.encode(slippageParam));
+            }
+
+            // revert if we didnt get profit
+            require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
+            uint profit = address(this).balance - EthBeforeArb;
+
+            
+            leftProfit = swapEthToDai(profit, true);
+
+            numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
+            require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
+        }
+        return (numTokensObtained, leftProfit);
+    }
+
+
+    function TokenToEthSwap(
+        address token,
+        uint256 tokensSold,
+        uint256 deadline,
+        uint256 minEth,
+        uint256 slippageParam,
+        bool WithArb
+    ) public returns(uint256, uint256) {        
+        // execute original trade
+        uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
+        uint256 leftProfit;
+        uint256 TokensBeforeArb;
+
+        if (WithArb){
+            {
+                // get v2 exchange
+                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+                // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
+                uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
+                
+                // to get the profit we store number of tokens before arbing
+                TokensBeforeArb = IERC20(token).balanceOf(address(this));
+                
+                // finally we execute a arb to reduce slippage
+                pair.swap((pair.token0() == address(token) ? 0 : numOfEthToBeArbedWith),(pair.token0() == address(token) ? numOfEthToBeArbedWith : 0),address(this),abi.encode(slippageParam));
+            }
+
+            // revert if we didnt get profit
+            require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
+            uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
+            
+            leftProfit = swapTokenToDai(token, profit, true);
+
+            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit,1,deadline);
+            msg.sender.transfer(numEthObtained);
+        }
+        return (numEthObtained, leftProfit);
+    }
+
+    function swapEthToDai(uint totalProfit, bool isIn) internal returns(uint leftProfit) {
         uint candyPrice = governance.candyPrice();
         uint candyProfit = totalProfit * 2 / 10;
         (,uint daiAmt) = getEthToDaiAmt(candyProfit, candyPrice);
@@ -244,25 +252,24 @@ contract CandyShopArber is IUniswapV2Callee {
         paths[0] = router01.WETH();
         paths[1] = address(stableToken);
         uint intialBal = address(this).balance;
-        uint[] memory amts = router01.swapETHForExactTokens.value(totalProfit)(
+        router01.swapETHForExactTokens.value(totalProfit)(
             daiAmt,
             paths,
             msg.sender,
             now + 1 days
         );
         uint finialBal = address(this).balance;
-        msg.sender.transfer(intialBal.sub(finialBal));
+        stableToken.approve(governance.candyStore(), daiAmt);
         CandyStoreInterface(governance.candyStore()).buyCandy(
             address(stableToken),
             daiAmt,
             msg.sender, //TODO - have to set `to` address,
             isIn
         );
-        stableToken.approve(governance.candyStore(), daiAmt);
-        emit LogSwapEthToDai(amts);
+        leftProfit = intialBal.sub(finialBal);
     }
 
-    function swapTokenToDai(address token, uint totalProfit, bool isIn) internal {
+    function swapTokenToDai(address token, uint totalProfit, bool isIn) internal returns(uint leftProfit) {
         uint candyPrice = governance.candyPrice();
         IERC20 tokenContract = IERC20(token);
         uint candyProfit = totalProfit * 2 / 10;
@@ -271,7 +278,7 @@ contract CandyShopArber is IUniswapV2Callee {
         paths[0] = token;
         paths[1] = address(stableToken);
         uint intialBal = tokenContract.balanceOf(address(this));
-        uint[] memory amts = router01.swapTokensForExactTokens(
+        router01.swapTokensForExactTokens(
             daiAmt,
             totalProfit,
             paths,
@@ -279,7 +286,6 @@ contract CandyShopArber is IUniswapV2Callee {
             now + 1 days
         );
         uint finialBal = tokenContract.balanceOf(address(this));
-        tokenContract.transfer(msg.sender, intialBal.sub(finialBal));
         stableToken.approve(governance.candyStore(), daiAmt);
         CandyStoreInterface(governance.candyStore()).buyCandy(
             address(stableToken),
@@ -287,7 +293,50 @@ contract CandyShopArber is IUniswapV2Callee {
             msg.sender, //TODO - have to set `to` address,
             isIn
         );
-        emit LogSwapTokenToDai(amts);
+        leftProfit = intialBal.sub(finialBal);
     }
 
+    /**
+     * @dev Swap.
+     * @param buyAddr buying token address.(For ETH: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)
+     * @param sellAddr selling token address.(For ETH: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)
+     * @param sellAmt selling token amount.
+     * @param minBuyAmt min buy amount.
+     * @param slippage slippage.
+     * @param deadline deadline.
+     * @param WithArb with arbs.
+    */
+    function swap(
+        address buyAddr,
+        address sellAddr,
+        uint sellAmt,
+        uint minBuyAmt,
+        uint slippage,
+        uint deadline,
+        bool WithArb
+    ) external payable {
+        if (buyAddr == ethAddr) {
+            require(sellAmt == msg.value, "msg.value is not same");
+            EthToTokenSwap(
+                buyAddr,
+                deadline,
+                minBuyAmt,
+                slippage,
+                WithArb
+            );
+        } else {
+            TokenToEthSwap(
+                sellAddr,
+                sellAmt,
+                deadline,
+                minBuyAmt,
+                slippage,
+                WithArb
+            );
+        }
+    }
+
+    // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
+    // but it's not possible because it requires a call to the v1 factory, which takes too much gas
+    receive() external payable {}
 }
