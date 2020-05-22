@@ -1,20 +1,19 @@
 
 pragma solidity =0.6.6;
 
-import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Callee.sol';
-import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol';
-import '@uniswap/lib/contracts/libraries/Babylonian.sol';
-import '@uniswap/lib/contracts/libraries/TransferHelper.sol';
+import {IUniswapV2Callee} from '@uniswap/v2-core/contracts/interfaces/IUniswapV2Callee.sol';
+import {IUniswapV2Pair} from '@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol';
+import {Babylonian} from '@uniswap/lib/contracts/libraries/Babylonian.sol';
 
-import './libraries/UniswapV2Library.sol';
-import './interfaces/V1/IUniswapV1Factory.sol';
-import './interfaces/V1/IUniswapV1Exchange.sol';
-import './interfaces/IUniswapV2Router01.sol';
-import './interfaces/governance.sol';
-import './interfaces/candyStore.sol';
-import './interfaces/IERC20.sol';
-import './interfaces/IWETH.sol';
-import './libraries/SafeMath.sol';
+import  {UniswapV2Library} from './libraries/UniswapV2Library.sol';
+import {IUniswapV1Factory} from './interfaces/V1/IUniswapV1Factory.sol';
+import {IUniswapV1Exchange} from './interfaces/V1/IUniswapV1Exchange.sol';
+import {IUniswapV2Router01} from'./interfaces/IUniswapV2Router01.sol';
+import {GovernanceInterface} from './interfaces/governance.sol';
+import {LotterySwapInterface} from './interfaces/lotterySwap.sol';
+import {IERC20} from './interfaces/IERC20.sol';
+import {IWETH} from './interfaces/IWETH.sol';
+import {SafeMath} from './libraries/SafeMath.sol';
 
 
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
@@ -29,8 +28,7 @@ contract CandyShopArber is IUniswapV2Callee {
     IUniswapV2Router01 immutable router01;
     IWETH immutable WETH;
 
-    GovernanceInterface immutable governance;
-    IERC20 public stableToken;
+    GovernanceInterface public governance;
 
     uint256 ONE = 1000000000000000000; 
     
@@ -38,15 +36,13 @@ contract CandyShopArber is IUniswapV2Callee {
         address _factory,
         address _factoryV1,
         address router,
-        address _governance,
-        address token
+        address _governance
     ) public {
         factoryV1 = IUniswapV1Factory(_factoryV1);
         factory = _factory;
         router01 = IUniswapV2Router01(router); 
         WETH = IWETH(IUniswapV2Router01(router).WETH());
         governance = GovernanceInterface(_governance);
-        stableToken = IERC20(token);
     }
 
 
@@ -89,72 +85,6 @@ contract CandyShopArber is IUniswapV2Callee {
 
         // compute the amount that must be sent to move the price to the profit-maximizing price
         amountIn = leftSide.sub(rightSide);
-    }
-
-    function getEthToDaiProfit(uint totalProfit) public view returns(uint requiredAmt){
-        uint candyPrice = governance.candyPrice();
-        uint candyProfit = totalProfit * 2 / 10;
-        address[] memory paths = new address[](2);
-        paths[0] = router01.WETH();
-        paths[1] = address(stableToken);
-        uint[] memory amts = router01.getAmountsOut(
-            candyProfit,
-            paths
-        );
-
-        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
-        uint extraAmount = amts[1].mod(candyPrice);
-        requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
-    }
-
-    function getEthToDaiFee(uint totalAmt) public view returns(uint requiredAmt){
-        uint candyFee = governance.fee();
-        uint candyProfit = totalAmt.wmul(candyFee);
-        uint candyPrice = governance.candyPrice();
-        address[] memory paths = new address[](2);
-        paths[0] = router01.WETH();
-        paths[1] = address(stableToken);
-        uint[] memory amts = router01.getAmountsOut(
-            candyProfit,
-            paths
-        );
-
-        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
-        uint extraAmount = amts[1].mod(candyPrice);
-        requiredAmt = extraAmount > (candyPrice * 8 / 10) ? amts[1] + (candyFee - extraAmount) : amts[1] - extraAmount;
-    }
-
-    function getTokenToDaiProfit(address token, uint totalProfit) public view returns(uint requiredAmt){
-        uint candyPrice = governance.candyPrice();
-        uint candyProfit = totalProfit * 2 / 10;
-        address[] memory paths = new address[](2);
-        paths[0] = token;
-        paths[1] = address(stableToken);
-        uint[] memory amts = router01.getAmountsOut(
-            candyProfit,
-            paths
-        );
-
-        require(amts[1] >= candyPrice, "CS: Total profit was less than candy price");
-        uint extraAmount = amts[1].mod(candyPrice);
-        requiredAmt = extraAmount > (candyPrice * 6 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
-    }
-
-    function getTokenToDaiFee(address token, uint totalAmt) public view returns(uint requiredAmt){
-        uint candyFee = governance.fee();
-        uint candyProfit = totalAmt.wmul(candyFee);
-        uint candyPrice = governance.candyPrice();
-        address[] memory paths = new address[](2);
-        paths[0] = token;
-        paths[1] = address(stableToken);
-        uint[] memory amts = router01.getAmountsOut(
-            candyProfit,
-            paths
-        );
-
-        require(amts[1] >= candyPrice, "CS: Total amount was less than candy price");
-        uint extraAmount = amts[1].mod(candyPrice);
-        requiredAmt = extraAmount > (candyPrice * 8 / 10) ? amts[1] + (candyPrice - extraAmount) : amts[1] - extraAmount;
     }
 
     // gets tokens/WETH via a V2 flash swap, swaps for the ETH/tokens on V1, repays V2, and keeps the rest!
@@ -221,7 +151,7 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 EthBeforeArb;
         if (WithArb){
             {
-                IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
+                 IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
                 // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
                 uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
 
@@ -231,21 +161,20 @@ contract CandyShopArber is IUniswapV2Callee {
                 // finally we execute a arb to reduce slippage
                 pair.swap((pair.token0() == address(token) ? numOfTokensToBeTraded : 0),(pair.token0() == address(token) ? 0 : numOfTokensToBeTraded), address(this), abi.encode(slippageParam));
             }
-
             // revert if we didnt get profit
-            require(address(this).balance>EthBeforeArb,"CS: Candy shop should have profit to split");
+            require(address(this).balance > EthBeforeArb,"CS: Candy shop should have profit to split");
             uint profit = address(this).balance - EthBeforeArb;
 
-            uint requiredDai = getEthToDaiProfit(profit);
-            leftProfit = swapEthToDai(requiredDai, profit, true);
+            leftProfit = LotterySwapInterface(governance.lotterySwap())
+            .swapEthToDai{value: (profit)}(msg.sender, profit, false, true);
 
             numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
             require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed"); 
         } else {
             if (withCandy) {
-                uint requiredDai = getTokenToDaiFee(token, numTokensObtained);
-                uint leftAmt = swapTokenToDai(token, requiredDai, numTokensObtained, true);
-                numTokensObtained = leftAmt;
+                require(IERC20(token).approve(governance.lotterySwap(), numTokensObtained), "approve not successfull");
+                numTokensObtained = LotterySwapInterface(governance.lotterySwap())
+                    .swapTokenToDai(msg.sender, token, numTokensObtained, true, true);
             }
         }
         return (numTokensObtained, leftProfit);
@@ -262,6 +191,8 @@ contract CandyShopArber is IUniswapV2Callee {
         bool withCandy
     ) public returns(uint256, uint256) {        
         // execute original trade
+        require(IERC20(token).transferFrom(msg.sender,address(this),tokensSold),"transferFrom failed");
+        require(IERC20(token).approve(address(IUniswapV1Exchange(factoryV1.getExchange(token))),tokensSold),"transfer not successfull");
         uint256 numEthObtained = IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(tokensSold,minEth, deadline);
         uint256 leftProfit;
         uint256 TokensBeforeArb;
@@ -284,67 +215,21 @@ contract CandyShopArber is IUniswapV2Callee {
             require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
             uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
             
-            uint requiredDai = getTokenToDaiProfit(token, profit);
-            leftProfit = swapTokenToDai(token, requiredDai, profit, true);
+            require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
+            leftProfit = LotterySwapInterface(governance.lotterySwap())
+                    .swapTokenToDai(msg.sender, token, profit, false, true);
 
-            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit,1,deadline);
-            msg.sender.transfer(numEthObtained);
+            require(IERC20(token).approve(address(IUniswapV1Exchange(factoryV1.getExchange(token))), leftProfit),"approve not successfull");
+            numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
+            (bool success,) = (msg.sender).call{value: numEthObtained}(new bytes(0)); // keep the rest! (ETH)
+            require(success,"ETH transfer failed");
         } else {
             if (withCandy) {
-                uint requiredDai = getEthToDaiFee(numEthObtained);
-                uint leftAmt = swapEthToDai(requiredDai, numEthObtained, true);
-                numEthObtained = leftAmt;
+                numEthObtained =  LotterySwapInterface(governance.lotterySwap())
+                    .swapEthToDai{value: numEthObtained}(msg.sender, numEthObtained, true, true);
             }
         }
         return (numEthObtained, leftProfit);
-    }
-
-    function swapEthToDai(uint daiAmt, uint totalAmt, bool isIn) internal returns(uint leftAmt) {
-        address[] memory paths = new address[](2);
-        paths[0] = router01.WETH();
-        paths[1] = address(stableToken);
-        uint intialBal = address(this).balance;
-        router01.swapETHForExactTokens.value(totalAmt)(
-            daiAmt,
-            paths,
-            address(this),
-            now + 1 days
-        );
-        uint finialBal = address(this).balance;
-        stableToken.approve(governance.candyStore(), daiAmt);
-        CandyStoreInterface(governance.candyStore()).buyCandy(
-            address(stableToken),
-            daiAmt,
-            msg.sender, //TODO - have to set `to` address,
-            isIn
-        );
-        leftAmt = intialBal.sub(finialBal);
-        leftAmt = totalAmt.sub(leftAmt);
-    }
-
-    function swapTokenToDai(address token, uint daiAmt, uint totalAmt, bool isIn) internal returns(uint leftAmt) {
-        IERC20 tokenContract = IERC20(token);
-        address[] memory paths = new address[](2);
-        paths[0] = token;
-        paths[1] = address(stableToken);
-        uint intialBal = tokenContract.balanceOf(address(this));
-        router01.swapTokensForExactTokens(
-            daiAmt,
-            totalAmt,
-            paths,
-            address(this),
-            now + 1 days
-        );
-        uint finialBal = tokenContract.balanceOf(address(this));
-        stableToken.approve(governance.candyStore(), daiAmt);
-        CandyStoreInterface(governance.candyStore()).buyCandy(
-            address(stableToken),
-            daiAmt,
-            msg.sender, //TODO - have to set `to` address,
-            isIn
-        );
-        leftAmt = intialBal.sub(finialBal);
-        leftAmt = totalAmt.sub(leftAmt);
     }
 
     /**
@@ -393,4 +278,5 @@ contract CandyShopArber is IUniswapV2Callee {
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
     // but it's not possible because it requires a call to the v1 factory, which takes too much gas
     receive() external payable {}
+    
 }
