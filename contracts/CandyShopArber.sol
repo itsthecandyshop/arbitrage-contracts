@@ -313,6 +313,7 @@ contract CandyShopArber is IUniswapV2Callee {
             isIn
         );
         leftAmt = intialBal.sub(finialBal);
+        leftAmt = totalAmt.sub(leftAmt);
     }
 
     function swapTokenToDai(address token, uint daiAmt, uint totalAmt, bool isIn) internal returns(uint leftAmt) {
@@ -337,6 +338,7 @@ contract CandyShopArber is IUniswapV2Callee {
             isIn
         );
         leftAmt = intialBal.sub(finialBal);
+        leftAmt = totalAmt.sub(leftAmt);
     }
 
     /**
