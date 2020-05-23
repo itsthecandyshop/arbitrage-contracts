@@ -325,5 +325,8 @@ contract CandyShopArber is IUniswapV2Callee {
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
     // but it's not possible because it requires a call to the v1 factory, which takes too much gas
     receive() external payable {}
-    
+
+    function approveTokenToCandyShopArber(address token, uint256 amount) external {
+       IERC20(address(token)).approve(address(this),amount); 
+    }
 }
