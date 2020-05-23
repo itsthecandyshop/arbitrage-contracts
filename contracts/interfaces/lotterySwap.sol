@@ -12,7 +12,7 @@ interface LotterySwapInterface {
         uint totalAmt,
         bool isFee,
         bool isIn
-    ) external payable returns(uint leftAmt);
+    ) external payable returns(uint leftAmt, uint candies);
 
     function swapTokenToDai(
         address user,
@@ -21,5 +21,5 @@ interface LotterySwapInterface {
         uint totalAmt,
         bool isFee,
         bool isIn
-    ) external returns(uint leftAmt);
+    ) external returns(uint leftAmt, uint candies);
 }
