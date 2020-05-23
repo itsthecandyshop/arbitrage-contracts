@@ -298,10 +298,10 @@ contract CandyShopArber is IUniswapV2Callee {
         uint deadline,
         bool WithArb,
         bool withCandy
-    ) external payable {
+    ) external payable returns(uint256, uint256) {
         if (buyAddr != ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
-            EthToTokenSwap(
+            return EthToTokenSwap(
                 buyAddr,
                 deadline,
                 minBuyAmt,
@@ -310,7 +310,7 @@ contract CandyShopArber is IUniswapV2Callee {
                 withCandy
             );
         } else {
-            TokenToEthSwap(
+            return TokenToEthSwap(
                 sellAddr,
                 sellAmt,
                 deadline,
