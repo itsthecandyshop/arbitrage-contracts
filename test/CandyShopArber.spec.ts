@@ -99,7 +99,7 @@ describe('CandyShopArber', () => {
 
     await candyShopArber.EthToTokenSwap(WETHPartner.address, MaxUint256, 1, parseEther('0.001'), true, false, {
       ...overrides,
-      value: parseEther('0.1'),
+      value: parseEther('0.5'),
     })
 
     const balanceAfter = await provider.getBalance(wallet.address)

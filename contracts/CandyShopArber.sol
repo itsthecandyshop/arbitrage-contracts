@@ -127,18 +127,19 @@ contract CandyShopArber is IUniswapV2Callee {
             uint amountRequired = UniswapV2Library.getAmountsIn(factory, amountETH, path)[0];
             require(amountReceived > amountRequired,"CS: Not enough tokens to payback loan"); // fail if we didn't get enough tokens back to repay our flash loan
             require(token.transfer(msg.sender, amountRequired),"CS: Paying back loan failed"); // return tokens to V2 pair
-            
             // TODO: Remove this as its the same contract
             require(token.transfer(sender, amountReceived - amountRequired),"CS: Token transfer to original transfer failed"); // keep the rest! (tokens)
         }
     }
     
     function _ethToTokenArbs(
+        uint256 existingTokens,
         address token,
         IUniswapV1Exchange exchangeV1,
         uint slippageParam,
         bool withCandy
     ) internal returns(uint numTokensObtained, uint leftProfit, uint numCandy) {
+        numTokensObtained =  existingTokens;
         uint256 EthBeforeArb;
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
@@ -185,7 +186,7 @@ contract CandyShopArber is IUniswapV2Callee {
         numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
         leftProfit;
         if (WithArb){
-             (numTokensObtained, leftProfit, numCandy) = _ethToTokenArbs(
+             (numTokensObtained, leftProfit, numCandy) = _ethToTokenArbs(numTokensObtained,
                     token,
                     exchangeV1,
                     slippageParam,
@@ -208,6 +209,7 @@ contract CandyShopArber is IUniswapV2Callee {
     }
 
     function _TokenToEthArbs(
+        uint256 existingEth,
         address token,
         IUniswapV1Exchange exchangeV1,
         uint slippageParam,
@@ -215,6 +217,7 @@ contract CandyShopArber is IUniswapV2Callee {
         bool withCandy
     ) internal returns(uint numEthObtained, uint leftProfit, uint numCandy) {
         uint256 TokensBeforeArb;
+        numEthObtained = existingEth;
 
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
@@ -268,7 +271,7 @@ contract CandyShopArber is IUniswapV2Callee {
         numEthObtained = exchangeV1.tokenToEthSwapInput(tokensSold, minEth, deadline);
         leftProfit;
         if (WithArb){
-            (numEthObtained, leftProfit, numCandy) = _TokenToEthArbs(
+            (numEthObtained, leftProfit, numCandy) = _TokenToEthArbs(numEthObtained,
                                                 token,
                                                 exchangeV1,
                                                 slippageParam,
