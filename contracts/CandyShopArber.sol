@@ -15,21 +15,45 @@ import {IERC20} from './interfaces/IERC20.sol';
 import {IWETH} from './interfaces/IWETH.sol';
 import {SafeMath} from './libraries/SafeMath.sol';
 
+contract DSMath {
+    uint constant WAD = 10 ** 18;
+
+    function add(uint x, uint y) internal pure returns (uint z) {
+        require((z = x + y) >= x, "math-not-safe");
+    }
+
+    function mul(uint x, uint y) internal pure returns (uint z) {
+        require(y == 0 || (z = x * y) / y == x, "math-not-safe");
+    }
+
+    function sub(uint x, uint y) internal pure returns (uint z) {
+        require((z = x - y) <= x, "sub-overflow");
+    }
+
+    function wmul(uint x, uint y) internal pure returns (uint z) {
+        z = add(mul(x, y), WAD / 2) / WAD;
+    }
+
+    function wdiv(uint x, uint y) internal pure returns (uint z) {
+        z = add(mul(x, WAD), y / 2) / y;
+    }
+
+    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b != 0, "modulo-by-zero");
+        return a % b;
+    }
+}
 
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
 // Right now the prize pool is long DAI,ETH,USDT,USDC
-contract CandyShopArber is IUniswapV2Callee {
+contract CandyShopArber is IUniswapV2Callee,DSMath {
     using SafeMath for uint256;
-
     address ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-
     IUniswapV1Factory immutable factoryV1;
     address immutable factory;
     IUniswapV2Router01 immutable router01;
     IWETH immutable WETH;
-
     GovernanceInterface public governance;
-
     uint256 ONE = 1000000000000000000; 
     
     constructor(
@@ -334,6 +358,7 @@ contract CandyShopArber is IUniswapV2Callee {
             );
         }
     }
+    
 
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
     // but it's not possible because it requires a call to the v1 factory, which takes too much gas
@@ -342,4 +367,26 @@ contract CandyShopArber is IUniswapV2Callee {
     function approveTokenToCandyShopArber(address token, uint256 amount) external {
        IERC20(address(token)).approve(address(this),amount); 
     }
+
+    function getBalance(address token, uint amountSold, bool EtoT) public view returns(
+       uint ethBalanceV1,
+       uint tokenBalaceV1,
+       uint ethBalanceV2,
+       uint tokenBalaceV2
+    ) {
+       address exchangeV1 = address(IUniswapV1Exchange(factoryV1.getExchange(token)));
+       ethBalanceV1 = exchangeV1.balance;
+       tokenBalaceV1 = IERC20(address(token)).balanceOf(exchangeV1);
+        (ethBalanceV2, tokenBalaceV2) = UniswapV2Library.getReserves(factory, address(WETH), token);
+
+       if (EtoT) {
+           uint _t1 = IUniswapV1Exchange(exchangeV1).getEthToTokenInputPrice(amountSold);
+           ethBalanceV1 = add(ethBalanceV1, amountSold);
+           tokenBalaceV1 = sub(tokenBalaceV1, _t1);
+       } else {
+           uint _e1 = IUniswapV1Exchange(exchangeV1).getTokenToEthInputPrice(amountSold);
+           tokenBalaceV1 = add(tokenBalaceV1, amountSold);
+           ethBalanceV1 = sub(ethBalanceV1, _e1);
+       }
+   }
 }
