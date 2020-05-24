@@ -15,35 +15,6 @@ import {IERC20} from './interfaces/IERC20.sol';
 import {IWETH} from './interfaces/IWETH.sol';
 import {SafeMath} from './libraries/SafeMath.sol';
 
-contract DSMath {
-    uint constant WAD = 10 ** 18;
-
-    function add(uint x, uint y) internal pure returns (uint z) {
-        require((z = x + y) >= x, "math-not-safe");
-    }
-
-    function mul(uint x, uint y) internal pure returns (uint z) {
-        require(y == 0 || (z = x * y) / y == x, "math-not-safe");
-    }
-
-    function sub(uint x, uint y) internal pure returns (uint z) {
-        require((z = x - y) <= x, "sub-overflow");
-    }
-
-    function wmul(uint x, uint y) internal pure returns (uint z) {
-        z = add(mul(x, y), WAD / 2) / WAD;
-    }
-
-    function wdiv(uint x, uint y) internal pure returns (uint z) {
-        z = add(mul(x, WAD), y / 2) / y;
-    }
-
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        require(b != 0, "modulo-by-zero");
-        return a % b;
-    }
-}
-
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
 // Right now the prize pool is long DAI,ETH,USDT,USDC
 contract CandyShopArber is IUniswapV2Callee,DSMath {
@@ -402,12 +373,12 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
 
        if (EtoT) {
            uint _t1 = IUniswapV1Exchange(exchangeV1).getEthToTokenInputPrice(amountSold);
-           ethBalanceV1 = add(ethBalanceV1, amountSold);
-           tokenBalaceV1 = sub(tokenBalaceV1, _t1);
+           ethBalanceV1 = ethBalanceV1.add(amountSold);
+           tokenBalaceV1 = tokenBalaceV1.sub(_t1);
        } else {
            uint _e1 = IUniswapV1Exchange(exchangeV1).getTokenToEthInputPrice(amountSold);
-           tokenBalaceV1 = add(tokenBalaceV1, amountSold);
-           ethBalanceV1 = sub(ethBalanceV1, _e1);
+           tokenBalaceV1 = tokenBalaceV1.add(amountSold);
+           ethBalanceV1 = ethBalanceV1.sub(_e1);
        }
    }
 }
