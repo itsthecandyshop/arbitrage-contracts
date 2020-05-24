@@ -15,38 +15,9 @@ import {IERC20} from './interfaces/IERC20.sol';
 import {IWETH} from './interfaces/IWETH.sol';
 import {SafeMath} from './libraries/SafeMath.sol';
 
-contract DSMath {
-    uint constant WAD = 10 ** 18;
-
-    function add(uint x, uint y) internal pure returns (uint z) {
-        require((z = x + y) >= x, "math-not-safe");
-    }
-
-    function mul(uint x, uint y) internal pure returns (uint z) {
-        require(y == 0 || (z = x * y) / y == x, "math-not-safe");
-    }
-
-    function sub(uint x, uint y) internal pure returns (uint z) {
-        require((z = x - y) <= x, "sub-overflow");
-    }
-
-    function wmul(uint x, uint y) internal pure returns (uint z) {
-        z = add(mul(x, y), WAD / 2) / WAD;
-    }
-
-    function wdiv(uint x, uint y) internal pure returns (uint z) {
-        z = add(mul(x, WAD), y / 2) / y;
-    }
-
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        require(b != 0, "modulo-by-zero");
-        return a % b;
-    }
-}
-
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
 // Right now the prize pool is long DAI,ETH,USDT,USDC
-contract CandyShopArber is IUniswapV2Callee,DSMath {
+contract CandyShopArber is IUniswapV2Callee {
     using SafeMath for uint256;
     address ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     IUniswapV1Factory immutable factoryV1;
@@ -155,7 +126,6 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
             require(token.transfer(sender, amountReceived - amountRequired),"CS: Token transfer to original transfer failed"); // keep the rest! (tokens)
         }
     }
-    
     function _ethToTokenArbs(
         uint256 existingTokens,
         address token,
@@ -169,7 +139,6 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
         uint256 numOfTokensToBeTraded = arbAmt > 0 ? arbAmt : calculateAmountForArbitrage(token,false);
-
         // to get the profit we store number of tokens before arbing
         EthBeforeArb = address(this).balance;
 
@@ -235,6 +204,27 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         }
     }
 
+    function _TokenToEthCandy(
+        address token,
+        uint profit,
+        bool withCandy
+    ) internal returns (uint leftProfit, uint numCandy){
+        if (withCandy) {
+            require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
+            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
+                    .swapTokenToDai(
+                        msg.sender,
+                        msg.sender,
+                        token,
+                        profit,
+                        false,
+                        true
+                    );
+        } else {
+            leftProfit = profit;
+        }
+    }
+
     function _TokenToEthArbs(
         uint256 existingEth,
         address token,
@@ -261,20 +251,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
         uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
         
-        require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
-        if (withCandy) {
-            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
-                    .swapTokenToDai(
-                        msg.sender,
-                        msg.sender,
-                        token,
-                        profit,
-                        false,
-                        true
-                    );
-        } else {
-            leftProfit = profit;
-        }
+        (leftProfit, numCandy) = _TokenToEthCandy(token, profit, withCandy);
 
         require(IERC20(token).approve(address(exchangeV1), leftProfit), "approve not successfull");
         numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
@@ -322,6 +299,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         }
     }
 
+    event Report(uint tokenBrought, uint profit, uint candiesBrought);
     /**
      * @dev Swap.
      * @param buyAddr buying token address.(For ETH: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)
@@ -342,10 +320,14 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         uint arbAmt,
         bool WithArb,
         bool withCandy
-    ) external payable returns(uint256, uint256, uint256) {
+    ) external payable returns(
+        uint256 tokenBrought,
+        uint256 profit,
+        uint256 candiesBrought
+    ) {
         if (buyAddr != ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
-            return EthToTokenSwap(
+            (tokenBrought, profit, candiesBrought) = EthToTokenSwap(
                 buyAddr,
                 deadline,
                 minBuyAmt,
@@ -355,7 +337,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                 withCandy
             );
         } else {
-            return TokenToEthSwap(
+            (tokenBrought, profit, candiesBrought) = TokenToEthSwap(
                 sellAddr,
                 sellAmt,
                 deadline,
@@ -366,6 +348,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                 withCandy
             );
         }
+        emit Report(tokenBrought, profit, candiesBrought);
     }
     
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
@@ -389,12 +372,12 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
 
        if (EtoT) {
            uint _t1 = IUniswapV1Exchange(exchangeV1).getEthToTokenInputPrice(amountSold);
-           ethBalanceV1 = add(ethBalanceV1, amountSold);
-           tokenBalaceV1 = sub(tokenBalaceV1, _t1);
+           ethBalanceV1 = ethBalanceV1.add(amountSold);
+           tokenBalaceV1 = tokenBalaceV1.sub(_t1);
        } else {
            uint _e1 = IUniswapV1Exchange(exchangeV1).getTokenToEthInputPrice(amountSold);
-           tokenBalaceV1 = add(tokenBalaceV1, amountSold);
-           ethBalanceV1 = sub(ethBalanceV1, _e1);
+           tokenBalaceV1 = tokenBalaceV1.add(amountSold);
+           ethBalanceV1 = ethBalanceV1.sub(_e1);
        }
    }
 }
