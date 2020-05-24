@@ -17,7 +17,7 @@ import {SafeMath} from './libraries/SafeMath.sol';
 
 // CandyShopArber is the arbitrage contract that deals with arbitrage opportunities per trade
 // Right now the prize pool is long DAI,ETH,USDT,USDC
-contract CandyShopArber is IUniswapV2Callee,DSMath {
+contract CandyShopArber is IUniswapV2Callee {
     using SafeMath for uint256;
     address ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     IUniswapV1Factory immutable factoryV1;
