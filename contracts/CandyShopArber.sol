@@ -136,8 +136,9 @@ contract CandyShopArber is IUniswapV2Callee {
     function _ethToTokenArbs(
         address token,
         IUniswapV1Exchange exchangeV1,
-        uint slippageParam
-    ) internal returns(uint numTokensObtained, uint leftProfit) {
+        uint slippageParam,
+        bool withCandy
+    ) internal returns(uint numTokensObtained, uint leftProfit, uint numCandy) {
         uint256 EthBeforeArb;
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
@@ -151,15 +152,19 @@ contract CandyShopArber is IUniswapV2Callee {
         // revert if we didnt get profit
         require(address(this).balance > EthBeforeArb,"CS: Candy shop should have profit to split");
         uint profit = address(this).balance - EthBeforeArb;
-
-        leftProfit = LotterySwapInterface(governance.lotterySwap())
-        .swapEthToDai{value: (profit)}(
-            msg.sender, // Sender of the swap
-            msg.sender, // Buy candies for addresss
-            profit, // profit to split
-            false, // candies are brought by fee or profit (fee=>true)
-            true // to participate in lottery or not
-        );
+        
+        if (withCandy) {
+            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
+            .swapEthToDai{value: (profit)}(
+                msg.sender, // Sender of the swap
+                msg.sender, // Buy candies for addresss
+                profit, // profit to split
+                false, // candies are brought by fee or profit (fee=>true)
+                true // to participate in lottery or not
+            );
+        } else {
+            leftProfit = profit;
+        }
 
         numTokensObtained = numTokensObtained + exchangeV1.ethToTokenSwapInput{value: leftProfit}(1, uint(-1));
         require(IERC20(token).transfer(msg.sender, numTokensObtained),"CS: Transfer tokens to original swapper failed");
@@ -172,23 +177,24 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 slippageParam,
         bool WithArb,
         bool withCandy
-    ) public payable returns(uint256, uint256){
+    ) public payable returns(uint256 numTokensObtained, uint256 leftProfit, uint256 numCandy){
         // get V1 contract exchange
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));
 
         // execute original trade
-        uint256 numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
-        uint256 leftProfit;
+        numTokensObtained = exchangeV1.ethToTokenSwapInput{value: msg.value}(minTokens, uint(-1));
+        leftProfit;
         if (WithArb){
-             (numTokensObtained, leftProfit) = _ethToTokenArbs(
+             (numTokensObtained, leftProfit, numCandy) = _ethToTokenArbs(
                     token,
                     exchangeV1,
-                    slippageParam
+                    slippageParam,
+                    withCandy
                 );
         } else {
             if (withCandy) {
                 require(IERC20(token).approve(governance.lotterySwap(), numTokensObtained), "approve not successfull");
-                numTokensObtained = LotterySwapInterface(governance.lotterySwap())
+                (numTokensObtained, numCandy) = LotterySwapInterface(governance.lotterySwap())
                     .swapTokenToDai(
                         msg.sender, // Sender of the swap
                         msg.sender, // Buy candies for addresss
@@ -199,15 +205,15 @@ contract CandyShopArber is IUniswapV2Callee {
                     );
             }
         }
-        return (numTokensObtained, leftProfit);
     }
 
     function _TokenToEthArbs(
         address token,
         IUniswapV1Exchange exchangeV1,
         uint slippageParam,
-        uint deadline
-    ) internal returns(uint numEthObtained, uint leftProfit) {
+        uint deadline,
+        bool withCandy
+    ) internal returns(uint numEthObtained, uint leftProfit, uint numCandy) {
         uint256 TokensBeforeArb;
 
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
@@ -225,15 +231,19 @@ contract CandyShopArber is IUniswapV2Callee {
         uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
         
         require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
-        leftProfit = LotterySwapInterface(governance.lotterySwap())
-                .swapTokenToDai(
-                    msg.sender,
-                    msg.sender,
-                    token,
-                    profit,
-                    false,
-                    true
-                );
+        if (withCandy) {
+            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
+                    .swapTokenToDai(
+                        msg.sender,
+                        msg.sender,
+                        token,
+                        profit,
+                        false,
+                        true
+                    );
+        } else {
+            leftProfit = profit;
+        }
 
         require(IERC20(token).approve(address(exchangeV1), leftProfit), "approve not successfull");
         numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
@@ -249,24 +259,25 @@ contract CandyShopArber is IUniswapV2Callee {
         uint256 slippageParam,
         bool WithArb,
         bool withCandy
-    ) public returns(uint256, uint256) {   
+    ) public returns(uint256 numEthObtained, uint256 leftProfit, uint numCandy) {   
         // get V1 contract exchange
         IUniswapV1Exchange exchangeV1 = IUniswapV1Exchange(factoryV1.getExchange(token));     
         // execute original trade
         require(IERC20(token).transferFrom(msg.sender,address(this),tokensSold),"transferFrom failed");
         require(IERC20(token).approve(address(exchangeV1), tokensSold),"transfer not successfull");
-        uint256 numEthObtained = exchangeV1.tokenToEthSwapInput(tokensSold, minEth, deadline);
-        uint256 leftProfit;
+        numEthObtained = exchangeV1.tokenToEthSwapInput(tokensSold, minEth, deadline);
+        leftProfit;
         if (WithArb){
-            (numEthObtained, leftProfit) = _TokenToEthArbs(
+            (numEthObtained, leftProfit, numCandy) = _TokenToEthArbs(
                                                 token,
                                                 exchangeV1,
                                                 slippageParam,
-                                                deadline
+                                                deadline,
+                                                withCandy
                                             );
         } else {
             if (withCandy) {
-                numEthObtained =  LotterySwapInterface(governance.lotterySwap())
+                (numEthObtained, numCandy) =  LotterySwapInterface(governance.lotterySwap())
                     .swapEthToDai{value: numEthObtained}(
                         msg.sender,
                         msg.sender,
@@ -276,7 +287,6 @@ contract CandyShopArber is IUniswapV2Callee {
                     );
             }
         }
-        return (numEthObtained, leftProfit);
     }
 
     /**
@@ -298,7 +308,7 @@ contract CandyShopArber is IUniswapV2Callee {
         uint deadline,
         bool WithArb,
         bool withCandy
-    ) external payable returns(uint256, uint256) {
+    ) external payable returns(uint256, uint256, uint256) {
         if (buyAddr != ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
             return EthToTokenSwap(
