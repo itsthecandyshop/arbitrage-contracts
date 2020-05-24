@@ -131,7 +131,6 @@ contract CandyShopArber is IUniswapV2Callee {
             require(token.transfer(sender, amountReceived - amountRequired),"CS: Token transfer to original transfer failed"); // keep the rest! (tokens)
         }
     }
-    
     function _ethToTokenArbs(
         uint256 existingTokens,
         address token,
@@ -145,7 +144,6 @@ contract CandyShopArber is IUniswapV2Callee {
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
         uint256 numOfTokensToBeTraded = arbAmt > 0 ? arbAmt : calculateAmountForArbitrage(token,false);
-
         // to get the profit we store number of tokens before arbing
         EthBeforeArb = address(this).balance;
 
@@ -211,6 +209,27 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
 
+    function _TokenToEthCandy(
+        address token,
+        uint profit,
+        bool withCandy
+    ) internal returns (uint leftProfit, uint numCandy){
+        if (withCandy) {
+            require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
+            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
+                    .swapTokenToDai(
+                        msg.sender,
+                        msg.sender,
+                        token,
+                        profit,
+                        false,
+                        true
+                    );
+        } else {
+            leftProfit = profit;
+        }
+    }
+
     function _TokenToEthArbs(
         uint256 existingEth,
         address token,
@@ -237,20 +256,7 @@ contract CandyShopArber is IUniswapV2Callee {
         require(IERC20(token).balanceOf(address(this))>TokensBeforeArb,"CS: Candy shop should have profit to split");
         uint profit = IERC20(token).balanceOf(address(this)) - TokensBeforeArb;
         
-        require(IERC20(token).approve(governance.lotterySwap(), profit), "approve not successfull");
-        if (withCandy) {
-            (leftProfit, numCandy) = LotterySwapInterface(governance.lotterySwap())
-                    .swapTokenToDai(
-                        msg.sender,
-                        msg.sender,
-                        token,
-                        profit,
-                        false,
-                        true
-                    );
-        } else {
-            leftProfit = profit;
-        }
+        (leftProfit, numCandy) = _TokenToEthCandy(token, profit, withCandy);
 
         require(IERC20(token).approve(address(exchangeV1), leftProfit), "approve not successfull");
         numEthObtained = numEthObtained + IUniswapV1Exchange(factoryV1.getExchange(token)).tokenToEthSwapInput(leftProfit, 1, deadline);
@@ -298,6 +304,7 @@ contract CandyShopArber is IUniswapV2Callee {
         }
     }
 
+    event Report(uint tokenBrought, uint profit, uint candiesBrought);
     /**
      * @dev Swap.
      * @param buyAddr buying token address.(For ETH: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE)
@@ -318,10 +325,14 @@ contract CandyShopArber is IUniswapV2Callee {
         uint arbAmt,
         bool WithArb,
         bool withCandy
-    ) external payable returns(uint256, uint256, uint256) {
+    ) external payable returns(
+        uint256 tokenBrought,
+        uint256 profit,
+        uint256 candiesBrought
+    ) {
         if (buyAddr != ethAddr) {
             require(sellAmt == msg.value, "msg.value is not same");
-            return EthToTokenSwap(
+            (tokenBrought, profit, candiesBrought) = EthToTokenSwap(
                 buyAddr,
                 deadline,
                 minBuyAmt,
@@ -331,7 +342,7 @@ contract CandyShopArber is IUniswapV2Callee {
                 withCandy
             );
         } else {
-            return TokenToEthSwap(
+            (tokenBrought, profit, candiesBrought) = TokenToEthSwap(
                 sellAddr,
                 sellAmt,
                 deadline,
@@ -342,6 +353,7 @@ contract CandyShopArber is IUniswapV2Callee {
                 withCandy
             );
         }
+        emit Report(tokenBrought, profit, candiesBrought);
     }
 
     // needs to accept ETH from any V1 exchange and WETH. ideally this could be enforced, as in the router,
