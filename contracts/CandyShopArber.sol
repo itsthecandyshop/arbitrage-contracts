@@ -161,13 +161,14 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         address token,
         IUniswapV1Exchange exchangeV1,
         uint slippageParam,
+        uint arbAmt,
         bool withCandy
     ) internal returns(uint numTokensObtained, uint leftProfit, uint numCandy) {
         numTokensObtained =  existingTokens;
         uint256 EthBeforeArb;
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow tokens from V2 and trade them for ETH on V1 => return ETH to V2
-        uint256 numOfTokensToBeTraded = calculateAmountForArbitrage(token,false);
+        uint256 numOfTokensToBeTraded = arbAmt > 0 ? arbAmt : calculateAmountForArbitrage(token,false);
 
         // to get the profit we store number of tokens before arbing
         EthBeforeArb = address(this).balance;
@@ -200,6 +201,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         uint256 deadline,
         uint256 minTokens,
         uint256 slippageParam,
+        uint256 arbAmt,
         bool WithArb,
         bool withCandy
     ) public payable returns(uint256 numTokensObtained, uint256 leftProfit, uint256 numCandy){
@@ -214,6 +216,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                     token,
                     exchangeV1,
                     slippageParam,
+                    arbAmt,
                     withCandy
                 );
         } else {
@@ -238,6 +241,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         IUniswapV1Exchange exchangeV1,
         uint slippageParam,
         uint deadline,
+        uint arbAmt,
         bool withCandy
     ) internal returns(uint numEthObtained, uint leftProfit, uint numCandy) {
         uint256 TokensBeforeArb;
@@ -245,7 +249,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
 
         IUniswapV2Pair pair = IUniswapV2Pair(UniswapV2Library.pairFor(factory, address(WETH), token));
         // Now we want to borrow ETH from V2 and trade them for TOKENS on V1 => return TOKENS to V2
-        uint256 numOfEthToBeArbedWith = calculateAmountForArbitrage(token,true);
+        uint256 numOfEthToBeArbedWith = arbAmt > 0 ? arbAmt : calculateAmountForArbitrage(token,true);
         
         // to get the profit we store number of tokens before arbing
         TokensBeforeArb = IERC20(token).balanceOf(address(this));
@@ -284,6 +288,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         uint256 deadline,
         uint256 minEth,
         uint256 slippageParam,
+        uint256 arbAmt,
         bool WithArb,
         bool withCandy
     ) public returns(uint256 numEthObtained, uint256 leftProfit, uint numCandy) {   
@@ -300,6 +305,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                                                 exchangeV1,
                                                 slippageParam,
                                                 deadline,
+                                                arbAmt,
                                                 withCandy
                                             );
         } else {
@@ -333,6 +339,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
         uint minBuyAmt,
         uint slippage,
         uint deadline,
+        uint arbAmt,
         bool WithArb,
         bool withCandy
     ) external payable returns(uint256, uint256, uint256) {
@@ -343,6 +350,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                 deadline,
                 minBuyAmt,
                 slippage,
+                arbAmt,
                 WithArb,
                 withCandy
             );
@@ -353,6 +361,7 @@ contract CandyShopArber is IUniswapV2Callee,DSMath {
                 deadline,
                 minBuyAmt,
                 slippage,
+                arbAmt,
                 WithArb,
                 withCandy
             );
