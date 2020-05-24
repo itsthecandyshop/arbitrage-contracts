@@ -57,8 +57,8 @@ describe('CandyShopArber', () => {
     })
 
     // add liquidity to V2 at a rate of 1 ETH / 200 X
-    const WETHPartnerAmountV2 = expandTo18Decimals(400)
-    const ETHAmountV2 = expandTo18Decimals(2)
+    const WETHPartnerAmountV2 = expandTo18Decimals(200)
+    const ETHAmountV2 = expandTo18Decimals(1)
     await WETHPartner.transfer(WETHPair.address, WETHPartnerAmountV2)
     await WETH.deposit({ value: ETHAmountV2 })
     await WETH.transfer(WETHPair.address, ETHAmountV2)
@@ -99,7 +99,7 @@ describe('CandyShopArber', () => {
 
     await candyShopArber.EthToTokenSwap(WETHPartner.address, MaxUint256, 1, parseEther('0.001'), true, false, {
       ...overrides,
-      value: parseEther('0.5'),
+      value: parseEther('0.1'),
     })
 
     const balanceAfter = await provider.getBalance(wallet.address)
